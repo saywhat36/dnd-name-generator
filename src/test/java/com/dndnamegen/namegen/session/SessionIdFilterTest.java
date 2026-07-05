@@ -46,6 +46,7 @@ class SessionIdFilterTest {
 
         assertThat(response.getCookie(SessionIdFilter.COOKIE_NAME)).isNull();
         assertThat(request.getAttribute(SessionIdFilter.REQUEST_ATTRIBUTE)).isEqualTo(existingSessionId);
+        verify(chain).doFilter(request, response);
     }
 
     @Test
@@ -61,6 +62,7 @@ class SessionIdFilterTest {
         assertThat(issued).isNotNull();
         assertThat(issued.getValue()).isNotBlank();
         assertThat(request.getAttribute(SessionIdFilter.REQUEST_ATTRIBUTE)).isEqualTo(issued.getValue());
+        verify(chain).doFilter(request, response);
     }
 
     @Test
@@ -76,5 +78,6 @@ class SessionIdFilterTest {
         assertThat(issued).isNotNull();
         assertThat(issued.getValue()).isNotEqualTo("some-shared-string");
         assertThat(request.getAttribute(SessionIdFilter.REQUEST_ATTRIBUTE)).isEqualTo(issued.getValue());
+        verify(chain).doFilter(request, response);
     }
 }
