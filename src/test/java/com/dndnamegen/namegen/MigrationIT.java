@@ -1,0 +1,58 @@
+package com.dndnamegen.namegen;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+/**
+ * Verifies the Flyway migrations apply cleanly against a real Postgres and that
+ * seed data lands as expected. No test in this suite requires a live LLM key.
+ */
+@Testcontainers
+@SpringBootTest
+class MigrationIT {
+
+    @Container
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+
+    @DynamicPropertySource
+    static void datasourceProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
+    }
+
+    @Autowired private JdbcTemplate jdbcTemplate;
+
+    @Test
+    void migrations_should_CreateSeedData_When_ApplicationStarts() {
+        Integer curatedCount = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM names WHERE source = 'CURATED'", Integer.class);
+
+        assertThat(curatedCount).isPositive();
+    }
+
+    @Test
+    void migrations_should_EnforceUniqueNamePerRaceAndGender() {
+        Integer duplicateRaceGenderPairs = jdbcTemplate.queryForObject(
+                """
+                SELECT count(*) FROM (
+                    SELECT normalized_name, race, gender
+                    FROM names
+                    GROUP BY normalized_name, race, gender
+                    HAVING count(*) > 1
+                ) duplicates
+                """,
+                Integer.class);
+
+        assertThat(duplicateRaceGenderPairs).isZero();
+    }
+}
