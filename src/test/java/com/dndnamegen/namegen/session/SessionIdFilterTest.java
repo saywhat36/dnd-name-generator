@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verify;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.Cookie;
+import java.time.Duration;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -26,6 +27,9 @@ class SessionIdFilterTest {
         Cookie issued = response.getCookie(SessionIdFilter.COOKIE_NAME);
         assertThat(issued).isNotNull();
         assertThat(issued.getValue()).isNotBlank();
+        assertThat(issued.isHttpOnly()).isTrue();
+        assertThat(issued.getPath()).isEqualTo("/");
+        assertThat(issued.getMaxAge()).isEqualTo((int) Duration.ofDays(365).toSeconds());
         assertThat(request.getAttribute(SessionIdFilter.REQUEST_ATTRIBUTE)).isEqualTo(issued.getValue());
         assertThat(response.getHeader("Set-Cookie"))
                 .contains("Secure")
