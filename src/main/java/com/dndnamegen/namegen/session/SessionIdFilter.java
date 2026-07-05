@@ -37,16 +37,33 @@ public class SessionIdFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+    /**
+     * Only trusts a cookie value that matches the UUID format this filter mints --
+     * a blank or arbitrary client-supplied value would otherwise be accepted as-is
+     * and treated as a valid session identity.
+     */
     private String readSessionId(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
         if (cookies == null) {
             return null;
         }
         for (Cookie cookie : cookies) {
-            if (COOKIE_NAME.equals(cookie.getName())) {
+            if (COOKIE_NAME.equals(cookie.getName()) && isValidSessionId(cookie.getValue())) {
                 return cookie.getValue();
             }
         }
         return null;
+    }
+
+    private boolean isValidSessionId(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        try {
+            UUID.fromString(value);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 }
