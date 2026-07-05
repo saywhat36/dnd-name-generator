@@ -13,11 +13,12 @@
 - Testcontainers for Postgres in integration tests
 - htmx + Thymeleaf frontend — stays in the Spring ecosystem, and htmx's
   SSE extension will make Phase 3 streaming close to free on the client
-- Providers: Groq as default (via the OpenAI-compatible starter, base
-  URL override), plus one additional provider (OpenAI or Anthropic,
-  native starter) wired in via Spring profiles
-  (`application-groq.yml`, `application-anthropic.yml`, etc.)
-  rather than a single shared properties file — structured output
+- Providers: Gemini as default (via `spring-ai-starter-model-google-genai`
+  against the Gemini Developer API/AI Studio, which has a genuine free
+  tier — Groq was the original choice but dropped its free tier), plus
+  one additional provider (OpenAI or Anthropic, native starter) wired in
+  via Spring profiles (`application-gemini.yml`, `application-anthropic.yml`,
+  etc.) rather than a single shared properties file — structured output
   support and option names are not identical across providers, so
   switching providers means re-verifying prompts and parsing, not just
   flipping a property.

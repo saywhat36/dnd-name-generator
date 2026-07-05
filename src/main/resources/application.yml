@@ -15,3 +15,10 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  ai:
+    google:
+      genai:
+        # GoogleGenAiAutoConfiguration requires a non-blank key to start up at all,
+        # even when no profile-specific provider (e.g. gemini) is active and nothing
+        # calls the ChatClient yet. Real key comes from application-gemini.yml.
+        api-key: ${GEMINI_API_KEY:not-configured}

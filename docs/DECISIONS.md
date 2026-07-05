@@ -237,3 +237,74 @@ indexes touching them were the unique constraints led by `session_id`,
 which can't serve a lookup/count by `name_id` alone (e.g. "how many
 favorites does this name have"). Added `idx_favorites_name_id` and
 `idx_name_reports_name_id`.
+
+## 2026-07-05: First Spring AI feature -- ChatClient via the OpenAI-compatible
+starter, targeting Groq
+No native Groq starter exists for Spring AI, so `spring-ai-starter-model-openai`
+is used against Groq's OpenAI-compatible endpoint (`base-url` override,
+per-provider `application-groq.yml` rather than merging into the shared
+`application.yml` -- see the provider-switching rationale in
+`docs/ARCHITECTURE.md`). `spring-ai-bom` is pinned to the GA release
+(`1.1.2`), available on Maven Central -- no milestone repository needed.
+Week 1 scope is deliberately minimal: one `ChatClient` bean
+(`ChatClientConfig`), one plain-text method
+(`NameGenerationService.testPrompt`) -- no prompt template, no structured
+output, no `ChatOptions` tuning. Those land in Week 2+ once the pipe is
+proven.
+
+## 2026-07-05: Eval test excluded from `mvn test` via explicit Surefire
+config, not `*IT` naming alone
+Verified empirically that `*IT`-suffixed classes (e.g. `MigrationIT`) are
+already picked up by the default `mvn test` run in this project (Surefire
+3.2.5's defaults here aren't `*IT`-exclusive the way Failsafe's are, and no
+`maven-failsafe-plugin` is configured) -- so naming alone would not have
+kept `NameGenerationServiceEvalIT` out of CI. Added an explicit
+`**/*EvalIT.java` exclude to the `maven-surefire-plugin` config in
+`pom.xml`, scoped to the new `*EvalIT` suffix rather than all `*IT`
+classes, so it doesn't change existing behavior for `MigrationIT`. Run
+manually: `GROQ_API_KEY=... ./mvnw test -Dtest=NameGenerationServiceEvalIT`.
+`@BeforeEach` also calls `assumeTrue` on `GROQ_API_KEY` being set, as a
+second layer of defense for that direct-run path.
+
+## 2026-07-05: Placeholder `spring.ai.openai.api-key` in base `application.yml`
+Caught during manual verification: `OpenAiChatAutoConfiguration` requires a
+non-blank API key to construct its beans at startup, regardless of which
+Spring profile is active -- it isn't gated on the `groq` profile just
+because that's the only place `base-url` is overridden. Without a
+placeholder, the app fails to start at all (`./mvnw spring-boot:run
+-Dspring-boot.run.profiles=local`, no AI feature in use yet) unless
+`GROQ_API_KEY` happens to be set. Added
+`api-key: ${GROQ_API_KEY:not-configured}` to the base `application.yml`,
+with a comment explaining why -- the real key and Groq `base-url` still
+come from `application-groq.yml` when that profile is active.
+
+## 2026-07-05: Switched default provider from Groq to Gemini -- Groq
+dropped its free tier
+The three entries above (Groq via the OpenAI-compatible starter,
+`application-groq.yml`, `GROQ_API_KEY`) are superseded by this one --
+Groq no longer has a free tier, which was the whole reason it was picked
+as the Phase 1 default for a learning project. Switched to Google's
+Gemini Developer API (AI Studio), which still has a genuine free tier
+with no credit card required.
+
+- Dependency: `spring-ai-starter-model-google-genai` (native starter,
+  not an OpenAI-compatibility shim like Groq needed) -- confirmed on
+  `spring-ai-bom:1.1.2` by unpacking the autoconfigure jar rather than
+  guessing artifact/property names, since guessing wrong burned time on
+  the Groq/milestone-BOM setup earlier.
+- Config prefix is `spring.ai.google.genai.*` (`api-key`,
+  `chat.options.model`), not `spring.ai.google.genai.vertex-ai` --
+  leaving `vertex-ai` unset (defaults `false`) is what selects the free
+  AI-Studio API-key auth path instead of Vertex AI's GCP-project/billing
+  path. This distinction matters: Vertex AI Gemini is a *different*
+  Spring AI starter (`spring-ai-starter-model-vertex-ai-gemini`) and is
+  not free.
+- Model: `gemini-2.5-flash` -- fast/cheap tier suited to short name-list
+  generations, matches the free tier's rate limits better than the
+  `-pro` variants.
+- `application-groq.yml` replaced with `application-gemini.yml`; base
+  `application.yml`'s placeholder key property moved from
+  `spring.ai.openai.api-key` to `spring.ai.google.genai.api-key` for the
+  same eager-autoconfiguration reason described above.
+- `NameGenerationServiceEvalIT` now activates the `gemini` profile and
+  checks `GEMINI_API_KEY` instead of `GROQ_API_KEY`.

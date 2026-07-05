@@ -21,10 +21,12 @@ Status legend: not started / in progress / done
 - [x] `SessionIdFilter` -- server-issued cookie
 
 ### Week 1 -- Basic AI endpoint
-- [ ] `NameController` + `NameService` returning curated names only
+- [x] `NameController` + `NameService` returning curated names only
   (no AI yet), by race + gender
-- [ ] First `ChatClient` call wired up (Groq), plain text response, to
-  confirm the pipe works before adding structure
+- [x] First `ChatClient` call wired up (Gemini), plain text response, to
+  confirm the pipe works before adding structure -- wired via
+  `NameGenerationServiceEvalIT`, not yet run against a live key (none
+  available yet)
 
 ### Week 2 -- Structured output
 - [ ] `NameSuggestion` record, structured output converter in
