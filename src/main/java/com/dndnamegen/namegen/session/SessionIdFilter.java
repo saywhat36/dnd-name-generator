@@ -6,7 +6,10 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.UUID;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -20,6 +23,8 @@ public class SessionIdFilter extends OncePerRequestFilter {
     public static final String COOKIE_NAME = "namegen_session_id";
     public static final String REQUEST_ATTRIBUTE = "sessionId";
 
+    private static final Duration COOKIE_MAX_AGE = Duration.ofDays(365);
+
     @Override
     protected void doFilterInternal(
             HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -27,11 +32,14 @@ public class SessionIdFilter extends OncePerRequestFilter {
         String sessionId = readSessionId(request);
         if (sessionId == null) {
             sessionId = UUID.randomUUID().toString();
-            Cookie cookie = new Cookie(COOKIE_NAME, sessionId);
-            cookie.setPath("/");
-            cookie.setHttpOnly(true);
-            cookie.setMaxAge((int) java.time.Duration.ofDays(365).toSeconds());
-            response.addCookie(cookie);
+            ResponseCookie cookie = ResponseCookie.from(COOKIE_NAME, sessionId)
+                    .path("/")
+                    .httpOnly(true)
+                    .secure(true)
+                    .sameSite("Lax")
+                    .maxAge(COOKIE_MAX_AGE)
+                    .build();
+            response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
         }
         request.setAttribute(REQUEST_ATTRIBUTE, sessionId);
         filterChain.doFilter(request, response);

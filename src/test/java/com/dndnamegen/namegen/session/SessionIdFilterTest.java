@@ -27,6 +27,10 @@ class SessionIdFilterTest {
         assertThat(issued).isNotNull();
         assertThat(issued.getValue()).isNotBlank();
         assertThat(request.getAttribute(SessionIdFilter.REQUEST_ATTRIBUTE)).isEqualTo(issued.getValue());
+        assertThat(response.getHeader("Set-Cookie"))
+                .contains("Secure")
+                .contains("HttpOnly")
+                .contains("SameSite=Lax");
         verify(chain).doFilter(request, response);
     }
 
