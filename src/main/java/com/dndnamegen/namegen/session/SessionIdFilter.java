@@ -12,6 +12,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.WebUtils;
 
 /**
  * Mints a server-issued session id cookie for anonymous users. This cookie is the
@@ -51,16 +52,11 @@ public class SessionIdFilter extends OncePerRequestFilter {
      * and treated as a valid session identity.
      */
     private String readSessionId(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null) {
+        Cookie cookie = WebUtils.getCookie(request, COOKIE_NAME);
+        if (cookie == null || !isValidSessionId(cookie.getValue())) {
             return null;
         }
-        for (Cookie cookie : cookies) {
-            if (COOKIE_NAME.equals(cookie.getName()) && isValidSessionId(cookie.getValue())) {
-                return cookie.getValue();
-            }
-        }
-        return null;
+        return cookie.getValue();
     }
 
     private boolean isValidSessionId(String value) {
