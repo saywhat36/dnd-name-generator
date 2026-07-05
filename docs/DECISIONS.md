@@ -230,3 +230,10 @@ value would be rejected on `names`. Added the identical CHECK to
 Postgres domain/enum (see the enum rationale above), so a future
 migration adding a race must update both constraints -- noted inline
 in `V1__init.sql`.
+
+## 2026-07-05: Added indexes on `favorites.name_id` and `name_reports.name_id`
+Caught in review: both FK columns had no dedicated index -- the only
+indexes touching them were the unique constraints led by `session_id`,
+which can't serve a lookup/count by `name_id` alone (e.g. "how many
+favorites does this name have"). Added `idx_favorites_name_id` and
+`idx_name_reports_name_id`.

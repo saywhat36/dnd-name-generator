@@ -68,4 +68,17 @@ class MigrationIT {
                         """))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
+
+    @Test
+    void favoritesAndNameReports_should_HaveADedicatedIndexOnNameId() {
+        Integer favoritesIndexCount = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM pg_indexes WHERE tablename = 'favorites' AND indexname = 'idx_favorites_name_id'",
+                Integer.class);
+        Integer nameReportsIndexCount = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM pg_indexes WHERE tablename = 'name_reports' AND indexname = 'idx_name_reports_name_id'",
+                Integer.class);
+
+        assertThat(favoritesIndexCount).isEqualTo(1);
+        assertThat(nameReportsIndexCount).isEqualTo(1);
+    }
 }

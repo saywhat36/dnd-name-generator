@@ -53,6 +53,10 @@ CREATE TABLE favorites (
     CONSTRAINT chk_favorites_owner_present CHECK (session_id IS NOT NULL OR owner_id IS NOT NULL)
 );
 
+-- The unique constraint above leads with session_id, so it can't serve a
+-- lookup/count by name_id alone (e.g. "how many favorites does this name have").
+CREATE INDEX idx_favorites_name_id ON favorites (name_id);
+
 CREATE TABLE name_reports (
     id          BIGSERIAL PRIMARY KEY,
     name_id     BIGINT      NOT NULL REFERENCES names (id),
@@ -61,3 +65,6 @@ CREATE TABLE name_reports (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uq_name_reports_session_name UNIQUE (session_id, name_id)
 );
+
+-- Same reasoning as idx_favorites_name_id above.
+CREATE INDEX idx_name_reports_name_id ON name_reports (name_id);
