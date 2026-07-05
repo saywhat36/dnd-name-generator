@@ -1,10 +1,12 @@
 package com.dndnamegen.namegen;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -54,5 +56,16 @@ class MigrationIT {
                 Integer.class);
 
         assertThat(duplicateRaceGenderPairs).isZero();
+    }
+
+    @Test
+    void generationLog_should_RejectInvalidRace_JustLikeNames() {
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                        """
+                        INSERT INTO generation_log
+                            (race, gender, mode, parse_success)
+                        VALUES ('NOT_A_REAL_RACE', 'FEMININE', 'STANDARD', true)
+                        """))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 }

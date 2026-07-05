@@ -220,3 +220,13 @@ seed names for the first four (ELF, DWARF, HUMAN, HALFLING) to keep the
 initial PR reviewable. Adding a race or backfilling curated names for
 the remaining four is a one-line migration, by design (see
 `docs/ARCHITECTURE.md`, "Why not native Postgres enums").
+
+## 2026-07-05: `generation_log.race` given the same CHECK constraint as `names.race`
+Caught in review: `generation_log.race` had no CHECK constraint, so a
+typo'd or stale race value could land in the audit log (written on
+every generation attempt) without being rejected, even though the same
+value would be rejected on `names`. Added the identical CHECK to
+`generation_log.race`. The two lists aren't backed by a shared
+Postgres domain/enum (see the enum rationale above), so a future
+migration adding a race must update both constraints -- noted inline
+in `V1__init.sql`.

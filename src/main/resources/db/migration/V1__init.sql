@@ -1,7 +1,11 @@
+-- race's allowed values are duplicated on names below (Postgres has no shared
+-- domain/enum here by design, see docs/ARCHITECTURE.md "Why not native Postgres
+-- enums") -- a migration adding a race must update both CHECK constraints.
 CREATE TABLE generation_log (
     id                        BIGSERIAL PRIMARY KEY,
     ts                        TIMESTAMPTZ         NOT NULL DEFAULT now(),
-    race                      VARCHAR(32)         NOT NULL,
+    race                      VARCHAR(32)         NOT NULL CHECK (race IN
+        ('ELF', 'DWARF', 'HUMAN', 'HALFLING', 'ORC', 'GNOME', 'DRAGONBORN', 'TIEFLING')),
     gender                    VARCHAR(16)         NOT NULL CHECK (gender IN ('MASCULINE', 'FEMININE')),
     mode                      VARCHAR(16)         NOT NULL CHECK (mode IN ('STANDARD', 'REFINEMENT')),
     provider                  VARCHAR(64),
