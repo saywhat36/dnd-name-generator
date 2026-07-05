@@ -43,19 +43,22 @@ class MigrationIT {
     }
 
     @Test
-    void migrations_should_EnforceUniqueNamePerRaceAndGender() {
-        Integer duplicateRaceGenderPairs = jdbcTemplate.queryForObject(
-                """
-                SELECT count(*) FROM (
-                    SELECT normalized_name, race, gender
-                    FROM names
-                    GROUP BY normalized_name, race, gender
-                    HAVING count(*) > 1
-                ) duplicates
-                """,
-                Integer.class);
+    void names_should_RejectDuplicateNormalizedNameRaceAndGender() {
+        String normalizedName = "test duplicate guard";
+        jdbcTemplate.update(
+                "INSERT INTO names (display_name, normalized_name, race, gender, source) "
+                        + "VALUES (?, ?, 'ELF', 'MASCULINE', 'AI_GENERATED')",
+                "Test Duplicate Guard", normalizedName);
 
-        assertThat(duplicateRaceGenderPairs).isZero();
+        try {
+            assertThatThrownBy(() -> jdbcTemplate.update(
+                            "INSERT INTO names (display_name, normalized_name, race, gender, source) "
+                                    + "VALUES (?, ?, 'ELF', 'MASCULINE', 'AI_GENERATED')",
+                            "Test Duplicate Guard Two", normalizedName))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        } finally {
+            jdbcTemplate.update("DELETE FROM names WHERE normalized_name = ?", normalizedName);
+        }
     }
 
     @Test
