@@ -773,3 +773,43 @@ gap already documented above (`Mockito cannot mock this class`, reproduced
 here against `NameGenerationService`); confirmed via `./mvnw test-compile`
 that the test compiles cleanly, and reasoned through each assertion
 manually given the local run is unavailable.
+
+Caught in review of #32, fixed in this PR:
+
+- **Double `generation_log` write on insert failure.** The original
+  `logged` boolean + `finally` backstop didn't actually prevent a second
+  row: if `NameInsertDao.insertGenerated` threw *after* the success row was
+  already saved (to get the FK id insert needs), the outer
+  `catch (RuntimeException)` unconditionally called `saveSkip(...)` again,
+  producing two rows -- one success, one failure -- for a single cycle.
+  Fixed by nesting a nested `try/catch` around only the insert call: a
+  failure there is logged via `slf4j` only, not a second `generation_log`
+  row, since the row already saved accurately describes what
+  `NameGenerationService` produced (the part that actually succeeded). This
+  also let the `logged` flag and `finally` backstop be removed entirely --
+  every branch now writes its own single row at its own single exit point,
+  so there's no shared state to keep in sync across future branches.
+  Regression test added:
+  `replenish_should_LogExactlyOnce_When_InsertFailsAfterSuccessfulGeneration`.
+- **Hardcoded `spring.ai.google.genai.chat.options.model` property path.**
+  Reading a Gemini-specific Spring AI property directly (rather than an
+  `app.*`-namespaced one) would silently resolve to the `:unknown` default
+  the moment Week 4 activates a different provider profile, since that
+  property path doesn't exist under e.g. an OpenAI/Anthropic profile --
+  contradicts `docs/ARCHITECTURE.md`'s explicit warning that provider
+  option names aren't identical across providers. Switched to
+  `app.generation.model`, set in `application-gemini.yml` via a YAML alias
+  (`&gemini-model` / `*gemini-model`) pointing at the same
+  `spring.ai.google.genai.chat.options.model` value, so the two can't drift
+  without also being a duplicated literal.
+
+Two more findings recorded rather than fixed here, since both need a
+`generation_log` schema/entity decision bigger than this PR's scope:
+[#33](https://github.com/saywhat36/dnd-name-generator/issues/33)
+(`NameInsertDao`'s under-yield/conflict-drop signal is only logged via
+`slf4j`, never persisted) and
+[#34](https://github.com/saywhat36/dnd-name-generator/issues/34)
+(routine skip reasons -- pool-at-cap, budget-exhausted, no-examples --
+reuse `GenerationLog.parseFailure(...)`, polluting `parse_success` for
+anyone querying "how often does parsing fail" as `docs/ARCHITECTURE.md`
+describes).

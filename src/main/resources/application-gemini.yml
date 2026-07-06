@@ -5,12 +5,17 @@ spring:
         api-key: ${GEMINI_API_KEY}
         chat:
           options:
-            model: gemini-2.5-flash
+            model: &gemini-model gemini-2.5-flash
 
 app:
   generation:
-    # Recorded on AI_GENERATED rows for lineage (see NameInsertDao). Lives here
-    # rather than the base application.yml since it's tied to whichever
-    # provider profile is active -- Week 4's second provider gets its own
-    # value in its own application-<provider>.yml.
+    # Recorded on AI_GENERATED rows for lineage (see NameInsertDao/PoolReplenishmentService).
+    # Deliberately app.generation.* rather than PoolReplenishmentService reading the
+    # spring.ai.google.genai.* property directly -- that property path is Gemini-specific and
+    # won't resolve under a different provider profile, so a direct reference would silently
+    # fall back to "unknown" the moment Week 4 activates a second provider. Lives here rather
+    # than the base application.yml since it's tied to whichever provider profile is active --
+    # Week 4's second provider gets its own values in its own application-<provider>.yml.
     provider: gemini
+    # YAML alias, not a duplicated literal -- always matches the model actually configured above.
+    model: *gemini-model

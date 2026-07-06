@@ -61,7 +61,7 @@ public class PoolReplenishmentService {
             @Value("${app.pool-replenishment.batch-size:5}") int batchSize,
             @Value("${app.pool-replenishment.budget.max-calls-per-day:200}") int maxGenerationCallsPerDay,
             @Value("${app.generation.provider:unknown}") String provider,
-            @Value("${spring.ai.google.genai.chat.options.model:unknown}") String model) {
+            @Value("${app.generation.model:unknown}") String model) {
         this.nameGenerationService = nameGenerationService;
         this.nameRepository = nameRepository;
         this.nameInsertDao = nameInsertDao;
@@ -94,17 +94,19 @@ public class PoolReplenishmentService {
     }
 
     /**
-     * Every return path below writes exactly one generation_log row describing
-     * this replenishment cycle's outcome -- via an early explicit save, or (if
-     * an unanticipated code path returns without one) the finally-block
-     * backstop. This mirrors the per-attempt logging NameGenerationService
-     * already does internally, but at the outer, one-cycle granularity: skip
-     * reasons (budget/cap/no-examples) have no other place to be recorded,
-     * since NameGenerationService is never called for them.
+     * Every path through this method writes exactly one generation_log row
+     * describing this replenishment cycle's outcome, at the single point each
+     * branch actually completes -- there is no shared "did we already log
+     * this?" flag to keep in sync, since each branch either returns
+     * immediately after its own saveSkip call or falls through to the single
+     * success-path save. This mirrors the per-attempt logging
+     * NameGenerationService already does internally, but at the outer,
+     * one-cycle granularity: skip reasons (budget/cap/no-examples) have no
+     * other place to be recorded, since NameGenerationService is never called
+     * for them.
      */
     private void doReplenish(Race race, Gender gender) {
         int requested = 0;
-        boolean logged = false;
         try {
             // Pool-cap and curated-examples checks run before the budget check -- a deliberate
             // reordering from docs/ARCHITECTURE.md's literal step list (which puts the budget check
@@ -116,7 +118,6 @@ public class PoolReplenishmentService {
                     race, gender, NameStatus.ACTIVE, NameSource.AI_GENERATED);
             if (poolSize >= poolCapPerCombo) {
                 saveSkip(race, gender, requested, "pool at cap (%d/%d)".formatted(poolSize, poolCapPerCombo));
-                logged = true;
                 return;
             }
 
@@ -128,13 +129,11 @@ public class PoolReplenishmentService {
                 // match. Skipping here (rather than generating anyway) is the fix that issue deferred to
                 // this class.
                 saveSkip(race, gender, requested, "no CURATED examples for this combo, skipping generation");
-                logged = true;
                 return;
             }
 
             if (!tryConsumeBudget()) {
                 saveSkip(race, gender, requested, "global LLM budget exhausted for today");
-                logged = true;
                 return;
             }
 
@@ -150,32 +149,36 @@ public class PoolReplenishmentService {
                     survivors.size(),
                     0,
                     0));
-            logged = true;
 
-            int inserted = nameInsertDao.insertGenerated(
-                    race,
-                    gender,
-                    survivors,
-                    provider,
-                    model,
-                    PromptTemplateConfig.NAME_GENERATION_PROMPT_VERSION,
-                    insertLog.getId());
-            log.info(
-                    "Replenished {}/{}: requested {}, generated {}, inserted {} (conflicts dropped: {})",
-                    race,
-                    gender,
-                    requested,
-                    survivors.size(),
-                    inserted,
-                    survivors.size() - inserted);
+            try {
+                int inserted = nameInsertDao.insertGenerated(
+                        race,
+                        gender,
+                        survivors,
+                        provider,
+                        model,
+                        PromptTemplateConfig.NAME_GENERATION_PROMPT_VERSION,
+                        insertLog.getId());
+                log.info(
+                        "Replenished {}/{}: requested {}, generated {}, inserted {} (conflicts dropped: {})",
+                        race,
+                        gender,
+                        requested,
+                        survivors.size(),
+                        inserted,
+                        survivors.size() - inserted);
+            } catch (RuntimeException insertFailure) {
+                // Deliberately not a second generation_log row: the row saved above already records
+                // what NameGenerationService produced (requested/accepted after quality-gate/dedup),
+                // which genuinely succeeded. A failure here is a DB/infrastructure failure inserting
+                // already-validated names -- generation_log audits generation outcomes, not insert
+                // infrastructure, so this is surfaced via the error log instead. Writing a second row
+                // here would make one replenishment cycle produce two generation_log rows.
+                log.error("Insert failed after successful generation for {}/{}", race, gender, insertFailure);
+            }
         } catch (RuntimeException e) {
             log.error("Replenishment failed for {}/{}", race, gender, e);
             saveSkip(race, gender, requested, "replenishment failed: " + e.getMessage());
-            logged = true;
-        } finally {
-            if (!logged) {
-                saveSkip(race, gender, requested, "replenishment ended without an explicit outcome log (bug)");
-            }
         }
     }
 

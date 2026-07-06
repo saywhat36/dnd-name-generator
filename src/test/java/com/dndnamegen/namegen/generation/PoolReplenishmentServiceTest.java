@@ -149,6 +149,25 @@ class PoolReplenishmentServiceTest {
     }
 
     @Test
+    void replenish_should_LogExactlyOnce_When_InsertFailsAfterSuccessfulGeneration() {
+        stubCounts(0, 3);
+        stubSavedLogWithId(7L);
+        when(nameGenerationService.generateValidatedNames(any(), any(), anyInt()))
+                .thenReturn(List.of("Aelric"));
+        when(nameInsertDao.insertGenerated(any(), any(), anyList(), anyString(), anyString(), anyString(), any()))
+                .thenThrow(new RuntimeException("connection reset"));
+
+        service(20, 5, 200).replenish(Race.ELF, Gender.FEMININE);
+
+        // Exactly one generation_log row for the whole cycle -- not one for the successful
+        // generation step and a second for the insert failure. See docs/DECISIONS.md.
+        ArgumentCaptor<GenerationLog> logCaptor = ArgumentCaptor.forClass(GenerationLog.class);
+        verify(generationLogRepository, times(1)).save(logCaptor.capture());
+        assertThat(logCaptor.getValue().isParseSuccess()).isTrue();
+        assertThat(logCaptor.getValue().getNamesAccepted()).isEqualTo(1);
+    }
+
+    @Test
     void replenish_should_SkipSecondCall_When_FirstCallForSameComboIsStillInFlight() throws InterruptedException {
         stubCounts(0, 3);
         stubSavedLogWithId(1L);
