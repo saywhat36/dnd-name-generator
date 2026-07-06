@@ -30,3 +30,9 @@ app:
     # SESSION_COOKIE_SECURE=false in your local environment/.env to persist the
     # session cookie across requests.
     secure: ${SESSION_COOKIE_SECURE:true}
+  quality-gate:
+    min-length: 2
+    max-length: 30
+    # Illustrative starter list, not exhaustive -- extend as real/famous names
+    # turn up in generated output. Case-insensitive match.
+    blocklist: Harry Potter, Frodo Baggins, Gandalf, Legolas, Aragorn, Elon Musk

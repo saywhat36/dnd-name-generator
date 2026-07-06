@@ -33,7 +33,7 @@ Status legend: not started / in progress / done
   `NameGenerationService`
 - [x] Externalized, versioned prompt (`name-generation-v1.st`), few-shot
   examples pulled from CURATED rows only
-- [ ] `QualityGateService` (length, charset, blocklist)
+- [x] `QualityGateService` (length, charset, blocklist)
 - [ ] `DeduplicationService` (pre-filter) + DB unique constraint as the
   actual correctness guarantee
 - [ ] `NameInsertDao` -- native `INSERT ... ON CONFLICT (normalized_name,

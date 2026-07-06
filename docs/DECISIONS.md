@@ -380,3 +380,29 @@ section and nothing to match. No guard is added yet since Week 2 has no
 per-combo skip/threshold logic until `PoolReplenishmentService` (Week 3)
 owns pool-cap and generation-trigger decisions -- tracked here rather than
 worked around locally so it isn't forgotten.
+
+## 2026-07-06: `QualityGateService` -- length, charset, blocklist
+Third Week 2 slice. Added `QualityGateService.passesQualityGate(String)`,
+checking (in order) length bounds, an allowed-character whitelist
+(Unicode letters plus a single apostrophe/hyphen/space separator, never
+leading/trailing or doubled), and a case-insensitive blocklist -- matching
+the three checks named in `docs/ROADMAP.md` and the rationale already
+recorded above ("Quality gate required before AI names enter the shared
+pool"). Config (`app.quality-gate.min-length`, `max-length`, `blocklist`)
+follows the existing `app.session-cookie.secure` convention: plain
+`@Value` injection in the constructor, no `@ConfigurationProperties`
+class, consistent with `SessionIdFilter`.
+
+The blocklist is seeded with a small illustrative starter list (a few
+well-known real/fictional names) in `application.yml`, not an exhaustive
+list -- extending it is a config change, not a code change. Considered
+loading it from a classpath resource file instead of a property; kept it
+as a property for now since the list is short and the pattern already
+exists for other `app.*` config in this codebase, revisit if it grows
+large enough to need its own file.
+
+This service is a pre-insert filter only, not a correctness mechanism --
+per `docs/ARCHITECTURE.md`, wiring it into the actual generate -> filter ->
+insert pipeline happens in `PoolReplenishmentService` (Week 3), alongside
+`DeduplicationService` and `NameInsertDao` (both still separate,
+not-yet-landed Week 2 items).
