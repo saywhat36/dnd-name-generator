@@ -129,8 +129,10 @@ class NameGenerationServiceTest {
         when(nameRepository.findByRaceAndGenderAndStatusAndSource(any(), any(), any(), any()))
                 .thenReturn(List.of());
         when(chatClient.prompt(anyString())).thenReturn(requestSpec);
-        when(requestSpec.call()).thenThrow(new RuntimeException("structured output parse failure")).thenReturn(responseSpec);
-        when(responseSpec.entity(any(ParameterizedTypeReference.class))).thenReturn(List.of(new NameSuggestion("Aelric")));
+        when(requestSpec.call()).thenReturn(responseSpec);
+        when(responseSpec.entity(any(ParameterizedTypeReference.class)))
+                .thenThrow(new IllegalStateException("structured output parse failure"))
+                .thenReturn(List.of(new NameSuggestion("Aelric")));
         when(qualityGateService.passesQualityGate("Aelric")).thenReturn(true);
         when(deduplicationService.filterDuplicates(eq(Race.ELF), eq(Gender.FEMININE), any()))
                 .thenReturn(List.of("Aelric"));
@@ -138,7 +140,7 @@ class NameGenerationServiceTest {
         List<String> result = nameGenerationService.generateValidatedNames(Race.ELF, Gender.FEMININE, 1);
 
         assertThat(result).containsExactly("Aelric");
-        verify(requestSpec, times(2)).call();
+        verify(responseSpec, times(2)).entity(any(ParameterizedTypeReference.class));
     }
 
     @Test

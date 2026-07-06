@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,6 +27,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class NameGenerationService {
+
+    private static final Logger log = LoggerFactory.getLogger(NameGenerationService.class);
 
     private final ChatClient chatClient;
     private final PromptTemplate nameGenerationPromptTemplate;
@@ -53,12 +57,18 @@ public class NameGenerationService {
     }
 
     public List<NameSuggestion> generateNameSuggestions(Race race, Gender gender, int count) {
-        String examples = nameRepository
+        return generateNameSuggestions(race, gender, count, curatedExamples(race, gender));
+    }
+
+    private String curatedExamples(Race race, Gender gender) {
+        return nameRepository
                 .findByRaceAndGenderAndStatusAndSource(race, gender, NameStatus.ACTIVE, NameSource.CURATED)
                 .stream()
                 .map(Name::getDisplayName)
                 .collect(Collectors.joining(", "));
+    }
 
+    private List<NameSuggestion> generateNameSuggestions(Race race, Gender gender, int count, String examples) {
         String promptText = nameGenerationPromptTemplate.render(
                 Map.of("race", race.name(), "gender", gender.name(), "count", count, "examples", examples));
 
@@ -83,12 +93,24 @@ public class NameGenerationService {
      * survivors via NameInsertDao and logging every attempt to generation_log.
      */
     public List<String> generateValidatedNames(Race race, Gender gender, int count) {
+        String examples = curatedExamples(race, gender);
         List<String> survivors = new ArrayList<>();
         for (int attempt = 1; attempt <= maxGenerationAttempts && survivors.size() < count; attempt++) {
             List<NameSuggestion> suggestions;
             try {
-                suggestions = generateNameSuggestions(race, gender, count - survivors.size());
+                suggestions = generateNameSuggestions(race, gender, count - survivors.size(), examples);
             } catch (RuntimeException parseFailure) {
+                // Spring AI's BeanOutputConverter wraps a structured-output parse failure in a bare
+                // RuntimeException/IllegalStateException -- no dedicated exception type to catch more
+                // narrowly. Logged so a persistently-failing combo leaves a trace even before Week 3's
+                // generation_log writes land.
+                log.warn(
+                        "Structured output parse failure generating {}/{} names (attempt {}/{})",
+                        race,
+                        gender,
+                        attempt,
+                        maxGenerationAttempts,
+                        parseFailure);
                 continue;
             }
 
@@ -101,6 +123,6 @@ public class NameGenerationService {
             combined.addAll(qualityPassed);
             survivors = deduplicationService.filterDuplicates(race, gender, combined);
         }
-        return survivors.size() > count ? survivors.subList(0, count) : survivors;
+        return survivors.size() > count ? new ArrayList<>(survivors.subList(0, count)) : survivors;
     }
 }
