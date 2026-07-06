@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
@@ -26,6 +27,12 @@ public class SessionIdFilter extends OncePerRequestFilter {
 
     private static final Duration COOKIE_MAX_AGE = Duration.ofDays(365);
 
+    private final boolean secureCookie;
+
+    public SessionIdFilter(@Value("${app.session-cookie.secure:true}") boolean secureCookie) {
+        this.secureCookie = secureCookie;
+    }
+
     @Override
     protected void doFilterInternal(
             HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -36,7 +43,7 @@ public class SessionIdFilter extends OncePerRequestFilter {
             ResponseCookie cookie = ResponseCookie.from(COOKIE_NAME, sessionId)
                     .path("/")
                     .httpOnly(true)
-                    .secure(true)
+                    .secure(secureCookie)
                     .sameSite("Lax")
                     .maxAge(COOKIE_MAX_AGE)
                     .build();

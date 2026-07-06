@@ -18,6 +18,10 @@ automatically via Spring Boot's Docker Compose support).
 ./mvnw spring-boot:run
 ```
 
+The session cookie is `Secure` by default, so it won't persist across
+requests over plain `http://localhost`. Set `SESSION_COOKIE_SECURE=false`
+in your environment (or `.env`) for local HTTP dev.
+
 ## Tests
 
 ```bash

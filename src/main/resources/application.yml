@@ -22,3 +22,11 @@ spring:
         # even when no profile-specific provider (e.g. gemini) is active and nothing
         # calls the ChatClient yet. Real key comes from application-gemini.yml.
         api-key: ${GEMINI_API_KEY:not-configured}
+
+app:
+  session-cookie:
+    # Defaults to Secure (browsers drop Secure cookies received over plain HTTP).
+    # Local dev runs on plain http://localhost with no TLS termination, so set
+    # SESSION_COOKIE_SECURE=false in your local environment/.env to persist the
+    # session cookie across requests.
+    secure: ${SESSION_COOKIE_SECURE:true}
