@@ -24,9 +24,9 @@ Status legend: not started / in progress / done
 - [x] `NameController` + `NameService` returning curated names only
   (no AI yet), by race + gender
 - [x] First `ChatClient` call wired up (Gemini), plain text response, to
-  confirm the pipe works before adding structure -- wired via
-  `NameGenerationServiceEvalIT`, not yet run against a live key (none
-  available yet)
+  confirm the pipe works before adding structure -- verified via
+  `NameGenerationServiceEvalIT`, run manually against a live
+  `GEMINI_API_KEY`
 
 ### Week 2 -- Structured output
 - [ ] `NameSuggestion` record, structured output converter in

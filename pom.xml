@@ -105,7 +105,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <!-- *EvalIT tests call a live LLM provider and require an API key.
-                         Run manually, e.g. GROQ_API_KEY=... ./mvnw test -Dtest=NameGenerationServiceEvalIT -->
+                         Run manually, e.g. GEMINI_API_KEY=... ./mvnw test -Dtest=NameGenerationServiceEvalIT -->
                     <excludes>
                         <exclude>**/*EvalIT.java</exclude>
                     </excludes>

@@ -254,16 +254,20 @@ proven.
 
 ## 2026-07-05: Eval test excluded from `mvn test` via explicit Surefire
 config, not `*IT` naming alone
-Verified empirically that `*IT`-suffixed classes (e.g. `MigrationIT`) are
-already picked up by the default `mvn test` run in this project (Surefire
-3.2.5's defaults here aren't `*IT`-exclusive the way Failsafe's are, and no
-`maven-failsafe-plugin` is configured) -- so naming alone would not have
-kept `NameGenerationServiceEvalIT` out of CI. Added an explicit
-`**/*EvalIT.java` exclude to the `maven-surefire-plugin` config in
-`pom.xml`, scoped to the new `*EvalIT` suffix rather than all `*IT`
-classes, so it doesn't change existing behavior for `MigrationIT`. Run
-manually: `GROQ_API_KEY=... ./mvnw test -Dtest=NameGenerationServiceEvalIT`.
-`@BeforeEach` also calls `assumeTrue` on `GROQ_API_KEY` being set, as a
+Verified empirically that Surefire 3.2.5's default include patterns
+(`**/Test*.java`, `**/*Test.java`, `**/*Tests.java`, `**/*TestCase.java`)
+do **not** match `*IT`-suffixed classes -- `MigrationIT` was never picked
+up by the default `mvn test` run in this project either, since no
+`maven-failsafe-plugin` is configured to bind `*IT` classes to a lifecycle
+phase. That means `*IT` naming alone was never sufficient to keep
+`NameGenerationServiceEvalIT` out of CI (there was no CI inclusion of
+`*IT` classes to opt out of), and it also means `MigrationIT` itself has
+no automatic execution path today -- a gap this decision doesn't close.
+Added an explicit `**/*EvalIT.java` exclude to the `maven-surefire-plugin`
+config in `pom.xml`, scoped to the new `*EvalIT` suffix so future
+non-`Eval` `*IT` classes aren't affected by this exclude either way. Run
+manually: `GEMINI_API_KEY=... ./mvnw test -Dtest=NameGenerationServiceEvalIT`.
+`@BeforeEach` also calls `assumeTrue` on `GEMINI_API_KEY` being set, as a
 second layer of defense for that direct-run path.
 
 ## 2026-07-05: Placeholder `spring.ai.openai.api-key` in base `application.yml`
