@@ -891,3 +891,49 @@ test and already relied on elsewhere in this codebase.
 `NameService.getNames` signature change -- this keeps its documented "no source
 toggle yet" behavior identical to before this PR, since Week 6 (not this PR) is
 where that controller gets a real toggle.
+
+## 2026-07-06: Week 6 htmx frontend brought forward; race/gender/source picker as
+button groups, not dropdowns
+Reordered ahead of Week 4/5 -- both are largely independent of the frontend
+(provider switching and favoriting/reporting are backend concerns), and the
+source toggle backend already landed in the previous PR, so extending the
+existing browse-only frontend slice with it was unblocked. Only the
+race/gender/source picker part of the Week 6 frontend item is done here --
+favorite/report action buttons are deferred until Week 5's backend exists to
+call, and `docs/ROADMAP.md`'s single Week 6 frontend line is split in two to
+reflect that, matching the precedent set by the `PoolReplenishmentService`
+entry's roadmap-line split.
+
+**Buttons instead of `<select>` dropdowns**, per explicit request: each race/
+gender/source option renders as its own `<button>` with an `hx-get` baked via
+Thymeleaf's `@{...}` link expression (carrying the *other* two current
+selections plus its own value), so a single click both selects and
+immediately re-queries -- no separate "submit" step, and no JS beyond htmx
+itself.
+
+**`/browse` now returns the whole picker+results fragment (`index :: browser`),
+not just the results list (`index :: list`) as before.** Buttons need to
+visually highlight whichever option is currently selected (a `selected` CSS
+class computed server-side from `selectedRace`/`selectedGender`/
+`selectedSource`), and that highlight can only stay correct after a click if
+the buttons themselves are part of what gets swapped -- swapping only the
+results `<ul>` (the prior behavior) would leave stale buttons highlighted
+after every click. `NameBrowserController.browse` and `.index` now share a
+`populateBrowser(...)` helper so both endpoints populate the same
+race/gender/source options plus the current selection identically, rather
+than duplicating that model-building logic across the two methods.
+
+**Empty-state message generalized** from "No curated names yet for this
+race/gender." to "No names yet for this race/gender/source." -- the old
+wording predated the source toggle and would be actively misleading for an
+empty AI_GENERATED or BOTH result (e.g. a combo whose AI pool hasn't been
+replenished yet has nothing to do with "curated").
+
+Verified manually: started the app locally (`docker compose up -d`,
+`SESSION_COOKIE_SECURE=false ./mvnw spring-boot:run
+-Dspring-boot.run.profiles=local`) and curled `/` and `/browse` with several
+race/gender/source combinations -- confirmed the default page loads with
+ELF/FEMININE/CURATED highlighted and real curated names, clicking a different
+combination (HALF_ORC/MASCULINE/BOTH) re-renders with exactly that
+combination's buttons highlighted and the right names, and the empty-state
+message renders correctly for a combo with no data (DRAGONBORN/CURATED).
