@@ -36,7 +36,7 @@ Status legend: not started / in progress / done
 - [x] `QualityGateService` (length, charset, blocklist)
 - [x] `DeduplicationService` (pre-filter) + DB unique constraint as the
   actual correctness guarantee
-- [ ] `NameInsertDao` -- native `INSERT ... ON CONFLICT (normalized_name,
+- [x] `NameInsertDao` -- native `INSERT ... ON CONFLICT (normalized_name,
   race, gender) DO NOTHING` path (JPA `saveAll` does not support this
   cleanly and a constraint violation poisons the transaction)
 - [ ] Bounded retry for parse failures and under-yield after

@@ -447,3 +447,37 @@ flagged as missing from `QualityGateService`. Kept in one place here
 rather than duplicated, so whichever component computes `normalized_name`
 for storage (`NameInsertDao`, next Week 2 item) can reuse it instead of
 re-implementing the same trim/lowercase/NFC logic.
+
+## 2026-07-06: `NameInsertDao` -- native `ON CONFLICT DO NOTHING` insert path
+Fifth Week 2 slice. Added `NameInsertDao.insertGenerated(Race, Gender,
+List<String> displayNames, String provider, String model, String
+promptVersion, Long generationLogId)` in `name/`, using `JdbcTemplate`
+with one `INSERT ... ON CONFLICT (normalized_name, race, gender) DO
+NOTHING` statement per candidate rather than a single batched statement.
+One statement per row was chosen deliberately over
+`JdbcTemplate.batchUpdate` so `jdbcTemplate.update(...)`'s per-statement
+return value (0 or 1 rows affected) can be summed into an accurate
+inserted-count -- the Week 3 replenishment path needs to know how many
+candidates actually landed (vs. were silently dropped by the conflict
+clause) to decide whether to retry for under-yield, and a single batched
+statement's aggregate return value would not distinguish "3 of 5
+inserted" from "5 of 5 inserted, 3 rows affected for some other reason."
+Reuses `DeduplicationService.normalize(String)` for the `normalized_name`
+value rather than re-implementing trim/lowercase/NFC here, per the
+rationale already recorded above. Source/status are hardcoded to
+`AI_GENERATED`/`ACTIVE` -- this DAO is scoped to the pool-write path only;
+the lazy insert-on-favorite path for `AI_REFINED` rows (Week 5) is
+expected to need its own insert call with a different source value, not
+a parameter added here speculatively.
+
+Tested against a real Postgres via Testcontainers
+(`NameInsertDaoIT`, matching `MigrationIT`'s existing pattern) rather
+than a mocked `JdbcTemplate` -- the entire point of this class is that
+`ON CONFLICT DO NOTHING` actually skips a colliding row without poisoning
+the transaction, which a mock verifying "was `update()` called with these
+arguments" cannot demonstrate. Attempted a manual run
+(`./mvnw test -Dtest=NameInsertDaoIT`) and hit the same pre-existing local
+Docker/Testcontainers environment issue already affecting `MigrationIT`
+on this machine (`ryuk` image pull failing on Docker API version
+mismatch) -- an environment quirk, not evidence against the approach;
+noted here rather than worked around.
