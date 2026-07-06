@@ -845,9 +845,15 @@ all or to trigger `replenish(...)` -- doing so would trigger background
 generation work for combos the user never asked to see AI names for. The check
 (`ACTIVE`/`AI_GENERATED` count < `app.pool-replenishment.replenish-threshold`,
 default 5, same `@Value` convention as the other `pool-replenishment.*`
-settings) runs for `AI_GENERATED` and `BOTH` alike, reusing the count query
-`PoolReplenishmentService` already has (`NameRepository.countByRaceAndGenderAndStatusAndSource`)
-rather than adding a new one.
+settings) runs for `AI_GENERATED` and `BOTH` alike. Caught in review: an
+earlier version of this check called
+`NameRepository.countByRaceAndGenderAndStatusAndSource` again to size the AI
+pool, adding a second DB round trip to a path `docs/ARCHITECTURE.md`
+explicitly calls "a cheap DB read with no LLM call attached" -- the list
+`findByRaceAndGenderAndStatusAndSourceIn` already returned above contains
+every ACTIVE/AI_GENERATED row for this combo whenever this branch runs, so
+the count is now derived from that list in-memory (filtering on
+`Name.getSource()`) instead of a second query.
 
 **Threshold check is separate from `PoolReplenishmentService`'s own pool-cap
 check, by design, not duplicated logic.** The two serve different questions

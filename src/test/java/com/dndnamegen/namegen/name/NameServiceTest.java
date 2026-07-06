@@ -12,6 +12,8 @@ import com.dndnamegen.namegen.generation.PoolReplenishmentService;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.mockito.stubbing.Answer;
 
@@ -20,6 +22,16 @@ class NameServiceTest {
     private final NameRepository nameRepository = mock(NameRepository.class);
     private final PoolReplenishmentService poolReplenishmentService = mock(PoolReplenishmentService.class);
     private final NameService nameService = new NameService(nameRepository, poolReplenishmentService, 5);
+
+    private static Name nameWithSource(NameSource source) {
+        Name name = mock(Name.class);
+        when(name.getSource()).thenReturn(source);
+        return name;
+    }
+
+    private static List<Name> aiGeneratedNames(int count) {
+        return IntStream.range(0, count).mapToObj(i -> nameWithSource(NameSource.AI_GENERATED)).toList();
+    }
 
     @Test
     void getNames_should_QueryCuratedOnly_When_SourceIsCurated() {
@@ -36,36 +48,33 @@ class NameServiceTest {
 
     @Test
     void getNames_should_QueryAiGeneratedOnly_When_SourceIsAiGenerated() {
-        Name aiName = mock(Name.class);
+        List<Name> aiNames = aiGeneratedNames(10);
         when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(
                         Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, List.of(NameSource.AI_GENERATED)))
-                .thenReturn(List.of(aiName));
-        when(nameRepository.countByRaceAndGenderAndStatusAndSource(
-                        Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, NameSource.AI_GENERATED))
-                .thenReturn(10L);
+                .thenReturn(aiNames);
 
         List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED);
 
-        assertThat(result).containsExactly(aiName);
+        assertThat(result).containsExactlyElementsOf(aiNames);
+        verify(poolReplenishmentService, never()).replenish(any(), any());
     }
 
     @Test
     void getNames_should_QueryCuratedAndAiGenerated_When_SourceIsBoth() {
-        Name curatedName = mock(Name.class);
-        Name aiName = mock(Name.class);
+        Name curatedName = nameWithSource(NameSource.CURATED);
+        List<Name> aiNames = aiGeneratedNames(10);
+        List<Name> allNames = Stream.concat(Stream.of(curatedName), aiNames.stream()).toList();
         when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(
                         Race.ELF,
                         Gender.FEMININE,
                         NameStatus.ACTIVE,
                         List.of(NameSource.CURATED, NameSource.AI_GENERATED)))
-                .thenReturn(List.of(curatedName, aiName));
-        when(nameRepository.countByRaceAndGenderAndStatusAndSource(
-                        Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, NameSource.AI_GENERATED))
-                .thenReturn(10L);
+                .thenReturn(allNames);
 
         List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.BOTH);
 
-        assertThat(result).containsExactly(curatedName, aiName);
+        assertThat(result).containsExactlyElementsOf(allNames);
+        verify(poolReplenishmentService, never()).replenish(any(), any());
     }
 
     @Test
@@ -81,10 +90,7 @@ class NameServiceTest {
     @Test
     void getNames_should_TriggerReplenish_When_SourceIsAiGeneratedAndPoolBelowThreshold() {
         when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(any(), any(), any(), any()))
-                .thenReturn(List.of());
-        when(nameRepository.countByRaceAndGenderAndStatusAndSource(
-                        Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, NameSource.AI_GENERATED))
-                .thenReturn(4L);
+                .thenReturn(aiGeneratedNames(4));
 
         nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED);
 
@@ -95,9 +101,6 @@ class NameServiceTest {
     void getNames_should_TriggerReplenish_When_SourceIsBothAndPoolBelowThreshold() {
         when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(any(), any(), any(), any()))
                 .thenReturn(List.of());
-        when(nameRepository.countByRaceAndGenderAndStatusAndSource(
-                        Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, NameSource.AI_GENERATED))
-                .thenReturn(0L);
 
         nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.BOTH);
 
@@ -107,10 +110,7 @@ class NameServiceTest {
     @Test
     void getNames_should_NotTriggerReplenish_When_AiGeneratedPoolAtOrAboveThreshold() {
         when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(any(), any(), any(), any()))
-                .thenReturn(List.of());
-        when(nameRepository.countByRaceAndGenderAndStatusAndSource(
-                        Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, NameSource.AI_GENERATED))
-                .thenReturn(5L);
+                .thenReturn(aiGeneratedNames(5));
 
         nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED);
 
@@ -129,9 +129,6 @@ class NameServiceTest {
     void getNames_should_ReturnWithoutBlocking_When_ReplenishSimulatesASlowProvider() throws InterruptedException {
         when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(any(), any(), any(), any()))
                 .thenReturn(List.of());
-        when(nameRepository.countByRaceAndGenderAndStatusAndSource(
-                        Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, NameSource.AI_GENERATED))
-                .thenReturn(0L);
         CountDownLatch slowProviderCallFinished = new CountDownLatch(1);
         Answer<Void> mimicsAsyncProxyDispatch = invocation -> {
             Thread backgroundReplenishment = new Thread(() -> {

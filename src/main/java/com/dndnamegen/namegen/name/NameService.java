@@ -42,8 +42,11 @@ public class NameService {
                 nameRepository.findByRaceAndGenderAndStatusAndSourceIn(race, gender, NameStatus.ACTIVE, sources);
 
         if (sources.contains(NameSource.AI_GENERATED)) {
-            long aiPoolSize = nameRepository.countByRaceAndGenderAndStatusAndSource(
-                    race, gender, NameStatus.ACTIVE, NameSource.AI_GENERATED);
+            // Derived from the list just fetched above rather than a second DB round trip --
+            // that list already contains every ACTIVE/AI_GENERATED row for this combo, since
+            // AI_GENERATED is always one of the requested sources whenever this branch runs.
+            long aiPoolSize =
+                    names.stream().filter(name -> name.getSource() == NameSource.AI_GENERATED).count();
             if (aiPoolSize < replenishThreshold) {
                 poolReplenishmentService.replenish(race, gender);
             }
