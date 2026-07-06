@@ -6,6 +6,7 @@ public enum Race {
     HUMAN,
     HALFLING,
     ORC,
+    HALF_ORC,
     GNOME,
     DRAGONBORN,
     TIEFLING
