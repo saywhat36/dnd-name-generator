@@ -29,7 +29,7 @@ Status legend: not started / in progress / done
   `GEMINI_API_KEY`
 
 ### Week 2 -- Structured output
-- [ ] `NameSuggestion` record, structured output converter in
+- [x] `NameSuggestion` record, structured output converter in
   `NameGenerationService`
 - [ ] Externalized, versioned prompt (`name-generation-v1.st`), few-shot
   examples pulled from CURATED rows only

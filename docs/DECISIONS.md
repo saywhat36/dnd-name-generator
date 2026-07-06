@@ -329,3 +329,19 @@ persist the cookie over HTTP. Documented in `README.md`. Considered
 switching the default to `false` instead and requiring an explicit opt-in
 for production, but that inverts the safer default for a project that
 will eventually run somewhere with real TLS.
+
+## 2026-07-06: `NameSuggestion` record + structured output via `ChatClient.entity()`
+First Week 2 slice: added `NameSuggestion(String name)` in `name/dto/` and
+`NameGenerationService.generateNameSuggestions(String promptText)`, which
+calls `ChatClient`'s structured-output support
+(`entity(ParameterizedTypeReference<List<NameSuggestion>>)`) instead of
+hand-parsing model text, per the project's structured-output convention.
+Kept `testPrompt` in place rather than replacing it in this PR --
+`NameGenerationServiceEvalIT` still exercises it, and Week 2 is being
+landed as one small reviewable PR per roadmap item, so plain-text ->
+structured-output cutover for the real generation flow is deferred to a
+later slice (prompt template externalization, few-shot examples, quality
+gate, dedup, and the native insert path) rather than bundled here. The
+prompt passed to `generateNameSuggestions` is still a raw string in this
+PR -- externalizing it to `name-generation-v1.st` is the next Week 2 item,
+not this one.
