@@ -44,20 +44,22 @@ Status legend: not started / in progress / done
 - [x] `generation_log` writes on every attempt, including failures
 
 ### Week 3 -- Pool + toggle
-- [ ] `PoolReplenishmentService`, `@Async`, threshold-triggered
+- [ ] `PoolReplenishmentService`, `@Async`, threshold-triggered -- service
+  itself lands with this slice; the "threshold-triggered" half (NameService
+  deciding *when* to call it) is the next slice, alongside the toggle below
 - [x] Explicit executor config (`AsyncConfig`) -- do not rely on
   `SimpleAsyncTaskExecutor` defaults
-- [ ] Explicit try/catch + `generation_log` write in `finally` --
+- [x] Explicit try/catch + `generation_log` write in `finally` --
   `@Async` failures are silent otherwise
-- [ ] Stampede guard: in-flight lock per race+gender combo before
+- [x] Stampede guard: in-flight lock per race+gender combo before
   triggering generation (in-memory CAS is fine for a single instance)
-- [ ] Per-combo pool cap, checked before generating
-- [ ] Global LLM budget check inside the replenishment path (not in a
+- [x] Per-combo pool cap, checked before generating
+- [x] Global LLM budget check inside the replenishment path (not in a
   servlet filter -- standard requests never reach one)
 - [ ] Three-way source toggle: CURATED / AI_GENERATED / BOTH
 - [ ] Confirm requests never block on a live LLM call (verify via a
   slow/mocked provider in a test)
-- [ ] Test: concurrent replenishment triggers for the same combo result
+- [x] Test: concurrent replenishment triggers for the same combo result
   in exactly one generation call (stampede guard verification)
 
 ### Week 4 -- Provider switching

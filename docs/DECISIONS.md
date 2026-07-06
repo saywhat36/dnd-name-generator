@@ -680,3 +680,136 @@ validation on the core/max/queue config values) and
 [#31](https://github.com/saywhat36/dnd-name-generator/issues/31)
 (`PoolReplenishmentService`'s eventual caller must catch
 `TaskRejectedException` rather than let it fail a user-facing request).
+
+## 2026-07-06: `PoolReplenishmentService` -- stampede guard, budget/cap
+checks, generate-and-insert wiring
+Second Week 3 slice. Added `PoolReplenishmentService` (`generation/`), the
+`@Async("poolReplenishmentExecutor")` method described in
+`docs/ARCHITECTURE.md`'s "Replenishment flow" section. It does not own
+generation itself -- that stays in `NameGenerationService.generateValidatedNames`
+(Week 2), which already owns its own bounded retry, quality-gate/dedup
+filtering, and per-attempt `generation_log` writes. This class owns the outer
+cycle: stampede guard, budget/cap/examples gating, the native insert
+(`NameInsertDao`), and one guaranteed `generation_log` row per replenishment
+cycle (as distinct from `NameGenerationService`'s per-model-call rows).
+
+**Split from the roadmap's single "PoolReplenishmentService,
+`@Async`, threshold-triggered" item.** The service and its internal
+gating land here; deciding *when* to call `replenish(...)` (the
+"threshold-triggered" half) belongs to `NameService`, which doesn't have a
+source toggle yet -- that's the next slice. `ROADMAP.md` reflects this split
+rather than leaving the whole line unchecked.
+
+**Stampede guard**: `ConcurrentHashMap<ComboKey, Boolean>` with
+`putIfAbsent`, per the CAS approach `docs/ARCHITECTURE.md` calls out as
+sufficient for a single instance. `ComboKey` is a small `Race`/`Gender`
+record rather than a string-concatenation key, to rule out accidental
+collisions.
+
+**Budget check reordered relative to `docs/ARCHITECTURE.md`'s literal step
+list.** The architecture doc lists the global budget check (step 2) before
+the per-combo pool cap check (step 3). Implemented in the opposite order
+instead: pool cap and curated-examples checks run first, and the budget
+counter is only consumed immediately before the real `generateValidatedNames`
+call. Consuming budget earlier would count combos that were never going to
+generate anyway (already at cap, or with no curated style anchor) against
+the shared daily limit, starving combos that actually need it for no
+reason. The day-rollover + counter is a plain `synchronized` method backed
+by an `AtomicInteger` and a `LocalDate` field -- single-instance in-memory,
+same caveat as the stampede guard above (a shared store would be needed
+across multiple instances).
+
+**Resolves [#18](https://github.com/saywhat36/dnd-name-generator/issues/18)**
+(hollow generation prompt for a combo with zero `CURATED` examples) by
+skipping generation entirely when `NameRepository.countByRaceAndGenderAndStatusAndSource`
+returns 0 for `ACTIVE`/`CURATED`, logging the skip rather than calling
+`NameGenerationService` at all -- the fix option that issue's "suggested
+fix" named as belonging to this class.
+
+**generation_log lineage for inserted rows**: `NameInsertDao.insertGenerated`
+needs a single `generationLogId` to attach to every row in one insert batch.
+Rather than trying to attribute inserted rows back to whichever of
+`NameGenerationService`'s (possibly several, per-retry) attempt-level log
+rows produced them, this class saves one additional summary
+`generation_log` row per replenishment cycle (`requested` = the batch size
+asked for, `accepted` = survivor count after `NameGenerationService`'s own
+filtering) and uses *that* row's id as the FK. This keeps the two logging
+granularities cleanly separated: attempt-level (model-call diagnostics,
+owned by `NameGenerationService`) versus cycle-level (what actually got
+persisted, owned by this class).
+
+**Provider/model values**: `NameInsertDao.insertGenerated` takes `provider`/
+`model` strings for the inserted `Name` rows, but no bean currently exposes
+"the active provider's name" (only one provider exists until Week 4).
+Added `app.generation.provider` (set per-provider-profile, e.g.
+`application-gemini.yml`, so Week 4's second provider gets its own value
+rather than a shared property) and reused the existing
+`spring.ai.google.genai.chat.options.model` property directly via `@Value`
+for the model, rather than introducing a new property that would just
+duplicate it.
+
+**No further retry after `NameInsertDao.insertGenerated` under-yields.**
+`NameInsertDao`'s own javadoc notes its `ON CONFLICT DO NOTHING` return
+count is "how callers... detect under-yield and decide whether to retry."
+Not implemented here: the stampede guard already prevents more than one
+in-flight replenishment per combo on a single instance, so an insert-time
+conflict for the *same* combo can only happen in a narrow window this
+project doesn't need to close yet. Recorded here rather than silently
+skipped, since it's flagged as expected future work in `NameInsertDao`
+itself, not a newly discovered gap.
+
+**Testing**: `PoolReplenishmentServiceTest` mocks all four collaborators
+(`NameGenerationService`, `NameRepository`, `NameInsertDao`,
+`GenerationLogRepository`), matching the existing plain-mock convention
+(no Spring context) used by `NameGenerationServiceTest`. The stampede-guard
+test spawns a real second `Thread` calling `replenish(...)` while the first
+call is deliberately blocked (via a `CountDownLatch` inside the mocked
+`generateValidatedNames`) to exercise the actual `ConcurrentHashMap`
+check -- calling the method directly (not through a `@Async` proxy) means
+both calls run on their own threads but the in-flight-map logic itself is
+exercised exactly as it would be under the real proxy. Could not execute
+`./mvnw test` locally -- same pre-existing JDK 26/Mockito inline-mock-maker
+gap already documented above (`Mockito cannot mock this class`, reproduced
+here against `NameGenerationService`); confirmed via `./mvnw test-compile`
+that the test compiles cleanly, and reasoned through each assertion
+manually given the local run is unavailable.
+
+Caught in review of #32, fixed in this PR:
+
+- **Double `generation_log` write on insert failure.** The original
+  `logged` boolean + `finally` backstop didn't actually prevent a second
+  row: if `NameInsertDao.insertGenerated` threw *after* the success row was
+  already saved (to get the FK id insert needs), the outer
+  `catch (RuntimeException)` unconditionally called `saveSkip(...)` again,
+  producing two rows -- one success, one failure -- for a single cycle.
+  Fixed by nesting a nested `try/catch` around only the insert call: a
+  failure there is logged via `slf4j` only, not a second `generation_log`
+  row, since the row already saved accurately describes what
+  `NameGenerationService` produced (the part that actually succeeded). This
+  also let the `logged` flag and `finally` backstop be removed entirely --
+  every branch now writes its own single row at its own single exit point,
+  so there's no shared state to keep in sync across future branches.
+  Regression test added:
+  `replenish_should_LogExactlyOnce_When_InsertFailsAfterSuccessfulGeneration`.
+- **Hardcoded `spring.ai.google.genai.chat.options.model` property path.**
+  Reading a Gemini-specific Spring AI property directly (rather than an
+  `app.*`-namespaced one) would silently resolve to the `:unknown` default
+  the moment Week 4 activates a different provider profile, since that
+  property path doesn't exist under e.g. an OpenAI/Anthropic profile --
+  contradicts `docs/ARCHITECTURE.md`'s explicit warning that provider
+  option names aren't identical across providers. Switched to
+  `app.generation.model`, set in `application-gemini.yml` via a YAML alias
+  (`&gemini-model` / `*gemini-model`) pointing at the same
+  `spring.ai.google.genai.chat.options.model` value, so the two can't drift
+  without also being a duplicated literal.
+
+Two more findings recorded rather than fixed here, since both need a
+`generation_log` schema/entity decision bigger than this PR's scope:
+[#33](https://github.com/saywhat36/dnd-name-generator/issues/33)
+(`NameInsertDao`'s under-yield/conflict-drop signal is only logged via
+`slf4j`, never persisted) and
+[#34](https://github.com/saywhat36/dnd-name-generator/issues/34)
+(routine skip reasons -- pool-at-cap, budget-exhausted, no-examples --
+reuse `GenerationLog.parseFailure(...)`, polluting `parse_success` for
+anyone querying "how often does parsing fail" as `docs/ARCHITECTURE.md`
+describes).
