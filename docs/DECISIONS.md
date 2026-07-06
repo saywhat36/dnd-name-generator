@@ -515,3 +515,42 @@ rethrown -- this method's contract is "best-effort, bounded," and surfacing
 per-attempt failures to `generation_log` is explicitly `PoolReplenishmentService`'s
 job, not this method's, per `docs/ARCHITECTURE.md`'s replenishment-flow
 step 10.
+
+## 2026-07-06: `generation_log` writes on every attempt, including failures
+Seventh (final) Week 2 slice. Added `GenerationLog` (JPA entity), `GenerationMode`
+(`STANDARD`/`REFINEMENT`), and `GenerationLogRepository` in `generation/`, matching
+the classes `docs/ARCHITECTURE.md`'s package layout already names for this table.
+Unlike `names`, `generation_log` has no `ON CONFLICT` requirement, so this is a
+plain JPA entity saved via `JpaRepository.save()` -- no native-insert DAO needed
+here, consistent with "everything else in the codebase stays on JPA."
+
+Wired into `NameGenerationService.generateValidatedNames`'s retry loop: every
+loop iteration (one call to the model) now writes exactly one `generation_log`
+row via `GenerationLog.parseFailure(...)` or `GenerationLog.success(...)`,
+immediately after that iteration's outcome is known -- both on the exception
+path (parse failure) and the normal path (recording `namesRequested` for that
+attempt, `namesAccepted` = survivors gained *this* attempt specifically, not
+cumulative, and the quality/duplicate rejection counts derived from the
+difference between suggestion count, quality-passed count, and post-dedup
+survivor count). "One attempt" is deliberately one retry-loop iteration, not
+one outer `generateValidatedNames` call, since the audit table's stated purpose
+("how often does parsing fail") only works at that granularity.
+
+Left `provider`, `model`, and `raw_response` unset (null, all nullable columns):
+`provider`/`model` aren't exposed by the `ChatClient` call site used here and
+there's only one provider until Week 4; `raw_response` would require
+restructuring away from the structured-output `entity()` call to capture
+pre-parse text, which is a bigger change than this slice's scope. Both are
+noted as gaps to revisit rather than worked around speculatively now.
+`mode` is hardcoded to `STANDARD` -- `REFINEMENT` mode generations don't exist
+yet (deferred memory feature); the enum value exists now so
+`generation_log.mode`'s CHECK constraint (`STANDARD`/`REFINEMENT`) already has
+a corresponding Java-side value ready when that feature lands.
+
+Tested with `GenerationLogIT` (Testcontainers, same pattern as `MigrationIT`/
+`NameInsertDaoIT`) verifying the entity actually round-trips through the real
+schema -- column names, the `NOT NULL` constraints on `race`/`gender`/`mode`/
+`parse_success`, and that the nullable yield-count columns stay null on a
+parse-failure row. Hit the same pre-existing local Docker/Testcontainers
+environment issue noted in the `NameInsertDao` decision when attempting a
+manual run; not re-litigated here.

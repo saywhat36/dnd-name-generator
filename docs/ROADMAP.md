@@ -41,7 +41,7 @@ Status legend: not started / in progress / done
   cleanly and a constraint violation poisons the transaction)
 - [x] Bounded retry for parse failures and under-yield after
   quality/dedup filtering
-- [ ] `generation_log` writes on every attempt, including failures
+- [x] `generation_log` writes on every attempt, including failures
 
 ### Week 3 -- Pool + toggle
 - [ ] `PoolReplenishmentService`, `@Async`, threshold-triggered
