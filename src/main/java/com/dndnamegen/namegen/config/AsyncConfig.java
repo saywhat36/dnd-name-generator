@@ -17,8 +17,16 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  * queueing). Also registers a logging {@link AsyncUncaughtExceptionHandler} as a
  * defense-in-depth backstop -- the primary "log every attempt" contract for
  * replenishment lives in PoolReplenishmentService's own try/catch/finally around
- * generation_log writes, since @Async only surfaces exceptions from void methods
- * to this handler, never to the caller.
+ * generation_log writes, since @Async routes an exception thrown from inside a
+ * void async method body to this handler rather than to the caller.
+ *
+ * <p>Note this does not cover queue/pool saturation: if the executor's bounded
+ * queue is full when a new replenishment task is submitted, rejection happens
+ * synchronously at the call site (a {@code TaskRejectedException}), before the
+ * async method body ever runs, and is <b>not</b> routed through this handler.
+ * The caller (PoolReplenishmentService's caller) must account for that
+ * possibility separately -- see the tracking issue linked in
+ * docs/DECISIONS.md.
  */
 @Configuration
 @EnableAsync

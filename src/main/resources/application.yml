@@ -40,6 +40,10 @@ app:
     pool-replenishment:
       # Small bounded pool -- replenishment is a background task, not a
       # request-serving path, so there's no need for a large thread count.
+      # queue-capacity is deliberately kept small relative to max-pool-size:
+      # ThreadPoolExecutor only grows past core-pool-size once the queue is
+      # full, so a large queue-capacity here would make max-pool-size
+      # effectively dead configuration under normal load.
       core-pool-size: 2
       max-pool-size: 4
-      queue-capacity: 50
+      queue-capacity: 8

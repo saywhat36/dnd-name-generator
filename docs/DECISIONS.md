@@ -662,3 +662,21 @@ No dedicated test added -- matches the existing pattern for `ChatClientConfig`
 and `PromptTemplateConfig` (plain `@Bean` wiring with no branching logic of
 its own); behavior is exercised indirectly once `PoolReplenishmentService`
 uses this executor.
+
+Caught in review of #29: `queue-capacity` was initially set to 50 against a
+`max-pool-size` of 4 -- since `ThreadPoolExecutor` only grows past
+`core-pool-size` once its queue is full, a queue that deep would make
+`max-pool-size` effectively dead configuration under normal load. Reduced
+`queue-capacity` to 8 so the pool can actually reach 4 threads under
+moderate contention. Also caught: the class javadoc overclaimed that
+`@Async` failures "never surface to the caller" -- true for exceptions
+thrown inside the async method body, but queue/pool saturation triggers a
+synchronous `TaskRejectedException` at the submission call site instead,
+which bypasses `getAsyncUncaughtExceptionHandler()` entirely. Javadoc
+reworded to call this out explicitly. Two follow-ups filed rather than
+fixed here, since neither has a caller yet to fix against:
+[#30](https://github.com/saywhat36/dnd-name-generator/issues/30) (no bounds
+validation on the core/max/queue config values) and
+[#31](https://github.com/saywhat36/dnd-name-generator/issues/31)
+(`PoolReplenishmentService`'s eventual caller must catch
+`TaskRejectedException` rather than let it fail a user-facing request).
