@@ -2,6 +2,7 @@ package com.dndnamegen.namegen.name;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
@@ -97,5 +98,23 @@ class NameInsertDaoIT {
                 Race.ELF, Gender.FEMININE, List.of("  SYLVAINE  ", "Sylvaine"), "test-provider", "test-model", "v1", null);
 
         assertThat(insertedCount).isEqualTo(1);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT display_name FROM names WHERE provider = 'test-provider'");
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0)).containsEntry("display_name", "SYLVAINE");
+    }
+
+    @Test
+    void insertGenerated_should_SkipNullCandidate_When_ListContainsOne() {
+        int insertedCount = nameInsertDao.insertGenerated(
+                Race.ELF,
+                Gender.FEMININE,
+                Arrays.asList("Sylvaine", null, "Nymrienne"),
+                "test-provider",
+                "test-model",
+                "v1",
+                null);
+
+        assertThat(insertedCount).isEqualTo(2);
     }
 }

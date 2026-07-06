@@ -37,6 +37,9 @@ public class NameInsertDao {
      * number of candidates actually inserted -- candidates dropped by
      * {@code ON CONFLICT DO NOTHING} are not counted, which is how callers (the
      * Week 3 replenishment path) detect under-yield and decide whether to retry.
+     * Candidates are expected to have already passed {@code QualityGateService}
+     * and {@code DeduplicationService} -- this DAO only owns the insert itself,
+     * not content validation.
      */
     public int insertGenerated(
             Race race,
@@ -48,10 +51,14 @@ public class NameInsertDao {
             Long generationLogId) {
         int insertedCount = 0;
         for (String displayName : displayNames) {
+            if (displayName == null) {
+                continue;
+            }
+            String trimmed = displayName.trim();
             insertedCount += jdbcTemplate.update(
                     INSERT_SQL,
-                    displayName,
-                    DeduplicationService.normalize(displayName),
+                    trimmed,
+                    DeduplicationService.normalize(trimmed),
                     race.name(),
                     gender.name(),
                     provider,
