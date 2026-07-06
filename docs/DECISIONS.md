@@ -516,41 +516,35 @@ per-attempt failures to `generation_log` is explicitly `PoolReplenishmentService
 job, not this method's, per `docs/ARCHITECTURE.md`'s replenishment-flow
 step 10.
 
-## 2026-07-06: `generation_log` writes on every attempt, including failures
-Seventh (final) Week 2 slice. Added `GenerationLog` (JPA entity), `GenerationMode`
-(`STANDARD`/`REFINEMENT`), and `GenerationLogRepository` in `generation/`, matching
-the classes `docs/ARCHITECTURE.md`'s package layout already names for this table.
-Unlike `names`, `generation_log` has no `ON CONFLICT` requirement, so this is a
-plain JPA entity saved via `JpaRepository.save()` -- no native-insert DAO needed
-here, consistent with "everything else in the codebase stays on JPA."
+## 2026-07-06: Deployment track -- same-origin on Render + Neon, kept
+separate from the Phase 1 learning roadmap
+Started a parallel effort to get the project to a small deployed product,
+without disturbing the Week 3-6 Spring AI learning items. All deployment
+design and runbook detail lives in a new `docs/DEPLOYMENT.md`; `ROADMAP.md`
+is deliberately untouched. Key choices:
 
-Wired into `NameGenerationService.generateValidatedNames`'s retry loop: every
-loop iteration (one call to the model) now writes exactly one `generation_log`
-row via `GenerationLog.parseFailure(...)` or `GenerationLog.success(...)`,
-immediately after that iteration's outcome is known -- both on the exception
-path (parse failure) and the normal path (recording `namesRequested` for that
-attempt, `namesAccepted` = survivors gained *this* attempt specifically, not
-cumulative, and the quality/duplicate rejection counts derived from the
-difference between suggestion count, quality-passed count, and post-dedup
-survivor count). "One attempt" is deliberately one retry-loop iteration, not
-one outer `generateValidatedNames` call, since the audit table's stated purpose
-("how often does parsing fail") only works at that granularity.
-
-Left `provider`, `model`, and `raw_response` unset (null, all nullable columns):
-`provider`/`model` aren't exposed by the `ChatClient` call site used here and
-there's only one provider until Week 4; `raw_response` would require
-restructuring away from the structured-output `entity()` call to capture
-pre-parse text, which is a bigger change than this slice's scope. Both are
-noted as gaps to revisit rather than worked around speculatively now.
-`mode` is hardcoded to `STANDARD` -- `REFINEMENT` mode generations don't exist
-yet (deferred memory feature); the enum value exists now so
-`generation_log.mode`'s CHECK constraint (`STANDARD`/`REFINEMENT`) already has
-a corresponding Java-side value ready when that feature lands.
-
-Tested with `GenerationLogIT` (Testcontainers, same pattern as `MigrationIT`/
-`NameInsertDaoIT`) verifying the entity actually round-trips through the real
-schema -- column names, the `NOT NULL` constraints on `race`/`gender`/`mode`/
-`parse_success`, and that the nullable yield-count columns stay null on a
-parse-failure row. Hit the same pre-existing local Docker/Testcontainers
-environment issue noted in the `NameInsertDao` decision when attempting a
-manual run; not re-litigated here.
+- **Frontend hosting: served from Render, same origin as the API**, not a
+  static site on GitHub Pages. GitHub Pages only serves static files, so
+  adopting it would have meant replacing the server-rendered htmx + Thymeleaf
+  frontend (committed to in `ARCHITECTURE.md`, and the basis for the Phase 3
+  SSE plan) with a fetch/JS SPA -- i.e. quietly rewriting a recorded decision.
+  Same-origin also avoids CORS and, more importantly, avoids cross-origin
+  session cookies, which would directly complicate the session-keyed Week 5
+  favorites/reports. GitHub Pages rejected on that basis.
+- **Database: Neon Postgres** (serverless, stock Postgres 16, genuine free
+  tier). Flyway runs against it unchanged. Two connection-string constraints
+  recorded in `DEPLOYMENT.md`: `sslmode=require`, and use the direct
+  (non-pooled) endpoint because Flyway's session-level advisory lock isn't
+  supported by Neon's PgBouncer transaction-mode pooler.
+- **Additive `prod` profile, not a replacement.** `application-prod.yml`
+  carries only deltas (Neon datasource from env, `spring.docker.compose.enabled=false`,
+  `server.port=${PORT}`); it activates as `prod,gemini` so the existing
+  `application-gemini.yml` provider config is reused, not duplicated. Local
+  dev (`./mvnw spring-boot:run`, no profile, compose.yaml auto-start) is
+  unchanged.
+- **Dockerfile over buildpack** for reproducible pinned builds; tests skipped
+  in the image build since `*IT` tests need Docker/Testcontainers unavailable
+  in a build container. `render.yaml` committed for reproducibility with all
+  secrets `sync: false` (dashboard-only, never in the repo).
+- **Free-tier cold start (~50s after ~15m idle) accepted** for a
+  demo/portfolio deployment rather than paying for an always-on instance.
