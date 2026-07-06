@@ -25,7 +25,8 @@ class NameControllerTest {
     @Test
     void getNames_should_ReturnCuratedNames_When_RaceAndGenderAreValid() throws Exception {
         Name curatedName = mock(Name.class);
-        when(nameService.getNames(Race.ELF, Gender.FEMININE)).thenReturn(List.of(curatedName));
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED))
+                .thenReturn(List.of(curatedName));
         when(curatedName.getId()).thenReturn(1L);
         when(curatedName.getDisplayName()).thenReturn("Aelric");
 
@@ -34,12 +35,41 @@ class NameControllerTest {
                 .andExpect(jsonPath("$[0].id").value(1))
                 .andExpect(jsonPath("$[0].displayName").value("Aelric"));
 
-        verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE));
+        verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE), eq(NameSourceFilter.CURATED));
+    }
+
+    @Test
+    void getNames_should_DefaultToCurated_When_SourceParamIsOmitted() throws Exception {
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED)).thenReturn(List.of());
+
+        mockMvc.perform(get("/names").param("race", "ELF").param("gender", "FEMININE"))
+                .andExpect(status().isOk());
+
+        verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE), eq(NameSourceFilter.CURATED));
+    }
+
+    @Test
+    void getNames_should_PassThroughSourceParam_When_SourceIsBoth() throws Exception {
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.BOTH)).thenReturn(List.of());
+
+        mockMvc.perform(get("/names").param("race", "ELF").param("gender", "FEMININE").param("source", "BOTH"))
+                .andExpect(status().isOk());
+
+        verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE), eq(NameSourceFilter.BOTH));
     }
 
     @Test
     void getNames_should_ReturnBadRequest_When_RaceIsInvalid() throws Exception {
         mockMvc.perform(get("/names").param("race", "NOT_A_REAL_RACE").param("gender", "FEMININE"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getNames_should_ReturnBadRequest_When_SourceIsInvalid() throws Exception {
+        mockMvc.perform(get("/names")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "NOT_A_REAL_SOURCE"))
                 .andExpect(status().isBadRequest());
     }
 }
