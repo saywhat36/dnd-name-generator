@@ -32,7 +32,7 @@ public class DeduplicationService {
         Set<String> seenNormalized = new HashSet<>(nameRepository.findNormalizedNameByRaceAndGender(race, gender));
         List<String> survivors = new ArrayList<>();
         for (String candidate : candidateNames) {
-            if (seenNormalized.add(normalize(candidate))) {
+            if (candidate != null && seenNormalized.add(normalize(candidate))) {
                 survivors.add(candidate);
             }
         }

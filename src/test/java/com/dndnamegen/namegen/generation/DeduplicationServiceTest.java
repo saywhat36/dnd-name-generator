@@ -8,6 +8,7 @@ import com.dndnamegen.namegen.name.Gender;
 import com.dndnamegen.namegen.name.NameRepository;
 import com.dndnamegen.namegen.name.Race;
 import java.text.Normalizer;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -73,5 +74,16 @@ class DeduplicationServiceTest {
                 deduplicationService.filterDuplicates(Race.ELF, Gender.FEMININE, List.of(decomposed, "Sylvaine"));
 
         assertThat(result).containsExactly("Sylvaine");
+    }
+
+    @Test
+    void filterDuplicates_should_SkipNullCandidate_When_ListContainsOne() {
+        when(nameRepository.findNormalizedNameByRaceAndGender(Race.ELF, Gender.FEMININE))
+                .thenReturn(List.of());
+
+        List<String> result = deduplicationService.filterDuplicates(
+                Race.ELF, Gender.FEMININE, Arrays.asList("Sylvaine", null, "Nymrienne"));
+
+        assertThat(result).containsExactly("Sylvaine", "Nymrienne");
     }
 }
