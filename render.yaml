@@ -1,0 +1,27 @@
+# Render infrastructure-as-code (Blueprint). Committing this makes the service
+# reproducible; you can also create the service by hand in the dashboard and
+# ignore this file. Secret values are NEVER stored here -- `sync: false` means
+# "prompt me in the dashboard, don't read from the repo."
+#
+# See docs/DEPLOYMENT.md for the full setup runbook.
+services:
+  - type: web
+    name: dnd-name-generator
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free            # free tier: spins down after ~15m idle, ~50s cold start
+    healthCheckPath: /names?race=ELF&gender=FEMININE
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod,gemini
+      - key: SESSION_COOKIE_SECURE
+        value: "true"     # Render terminates TLS, so the app is reached over HTTPS
+      # --- secrets: set these in the Render dashboard, not in this file ---
+      - key: SPRING_DATASOURCE_URL
+        sync: false        # jdbc:postgresql://<neon-direct-host>/namegen?sslmode=require
+      - key: SPRING_DATASOURCE_USERNAME
+        sync: false
+      - key: SPRING_DATASOURCE_PASSWORD
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
