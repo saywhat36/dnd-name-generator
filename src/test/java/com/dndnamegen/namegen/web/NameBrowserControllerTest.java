@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.dndnamegen.namegen.name.Gender;
 import com.dndnamegen.namegen.name.Name;
 import com.dndnamegen.namegen.name.NameService;
+import com.dndnamegen.namegen.name.NameSourceFilter;
 import com.dndnamegen.namegen.name.Race;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -31,31 +32,31 @@ class NameBrowserControllerTest {
     void index_should_RenderDefaultRaceAndGenderResults_When_PageLoads() throws Exception {
         Name curatedName = mock(Name.class);
         when(curatedName.getDisplayName()).thenReturn("Adrie");
-        when(nameService.getNames(Race.ELF, Gender.FEMININE)).thenReturn(List.of(curatedName));
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED)).thenReturn(List.of(curatedName));
 
         mockMvc.perform(get("/"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Adrie")));
 
-        verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE));
+        verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE), eq(NameSourceFilter.CURATED));
     }
 
     @Test
     void browse_should_RenderNamesForRequestedRaceAndGender_When_ParamsAreValid() throws Exception {
         Name curatedName = mock(Name.class);
         when(curatedName.getDisplayName()).thenReturn("Argran");
-        when(nameService.getNames(Race.HALF_ORC, Gender.MASCULINE)).thenReturn(List.of(curatedName));
+        when(nameService.getNames(Race.HALF_ORC, Gender.MASCULINE, NameSourceFilter.CURATED)).thenReturn(List.of(curatedName));
 
         mockMvc.perform(get("/browse").param("race", "HALF_ORC").param("gender", "MASCULINE"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Argran")));
 
-        verify(nameService).getNames(eq(Race.HALF_ORC), eq(Gender.MASCULINE));
+        verify(nameService).getNames(eq(Race.HALF_ORC), eq(Gender.MASCULINE), eq(NameSourceFilter.CURATED));
     }
 
     @Test
     void browse_should_RenderEmptyMessage_When_NoCuratedNamesExist() throws Exception {
-        when(nameService.getNames(Race.HUMAN, Gender.MASCULINE)).thenReturn(List.of());
+        when(nameService.getNames(Race.HUMAN, Gender.MASCULINE, NameSourceFilter.CURATED)).thenReturn(List.of());
 
         mockMvc.perform(get("/browse").param("race", "HUMAN").param("gender", "MASCULINE"))
                 .andExpect(status().isOk())

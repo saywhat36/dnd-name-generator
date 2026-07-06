@@ -16,7 +16,10 @@ public class NameController {
     }
 
     @GetMapping("/names")
-    public List<NameResponse> getNames(@RequestParam Race race, @RequestParam Gender gender) {
-        return nameService.getNames(race, gender).stream().map(NameResponse::from).toList();
+    public List<NameResponse> getNames(
+            @RequestParam Race race,
+            @RequestParam Gender gender,
+            @RequestParam(defaultValue = "CURATED") NameSourceFilter source) {
+        return nameService.getNames(race, gender, source).stream().map(NameResponse::from).toList();
     }
 }

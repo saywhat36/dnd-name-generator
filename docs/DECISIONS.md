@@ -813,3 +813,75 @@ Two more findings recorded rather than fixed here, since both need a
 reuse `GenerationLog.parseFailure(...)`, polluting `parse_success` for
 anyone querying "how often does parsing fail" as `docs/ARCHITECTURE.md`
 describes).
+
+## 2026-07-06: Source toggle + threshold-triggered replenishment wired into
+`NameService`
+Third Week 3 slice, completing the split recorded in the `PoolReplenishmentService`
+entry above -- that entry landed the service and its internal gating; this one
+adds the CURATED/AI_GENERATED/BOTH toggle and decides *when* `replenish(...)`
+gets called.
+
+**New `NameSourceFilter` enum, not a `BOTH` value on `NameSource`.** `NameSource`
+is the persisted `names.source` column (`CURATED`/`AI_GENERATED`/`AI_REFINED`) --
+`BOTH` is never a real row value, only a request-time filter, so adding it there
+would let an invalid state leak into a column that's supposed to describe where a
+specific row came from. `NameSourceFilter` lives in `name/` alongside `Race`/
+`Gender` and is mapped to a `List<NameSource>` inside `NameService` (`CURATED` ->
+`[CURATED]`, `AI_GENERATED` -> `[AI_GENERATED]`, `BOTH` -> `[CURATED,
+AI_GENERATED]`).
+
+**New `NameRepository.findByRaceAndGenderAndStatusAndSourceIn(...)`,
+existing single-source method left alone.** `BOTH` needs an `IN (...)` query;
+rather than replacing the existing `findByRaceAndGenderAndStatusAndSource`
+(single `NameSource`) with this, both now coexist --
+`NameGenerationService.generateNameSuggestions` still calls the single-source
+method to pull CURATED-only few-shot examples (a hard rule, not something this
+PR's scope touches), so replacing it would have meant re-verifying an unrelated
+code path for no benefit.
+
+**Threshold check only runs when the requested source includes
+`AI_GENERATED`.** A CURATED-only request has no reason to look at the AI pool at
+all or to trigger `replenish(...)` -- doing so would trigger background
+generation work for combos the user never asked to see AI names for. The check
+(`ACTIVE`/`AI_GENERATED` count < `app.pool-replenishment.replenish-threshold`,
+default 5, same `@Value` convention as the other `pool-replenishment.*`
+settings) runs for `AI_GENERATED` and `BOTH` alike, reusing the count query
+`PoolReplenishmentService` already has (`NameRepository.countByRaceAndGenderAndStatusAndSource`)
+rather than adding a new one.
+
+**Threshold check is separate from `PoolReplenishmentService`'s own pool-cap
+check, by design, not duplicated logic.** The two serve different questions
+answered at different layers: `NameService`'s threshold decides *whether this
+request's read is worth triggering a background refill for* (a low-but-nonzero
+signal, checked on the synchronous read path); `PoolReplenishmentService`'s cap
+check decides *whether that triggered cycle should actually generate anything*
+(an upper bound, checked inside the async cycle, using its own count query
+since the pool may have changed between the two checks under concurrent
+requests). Collapsing them into one check would require `NameService` to know
+about cap/budget concerns that `docs/ARCHITECTURE.md` deliberately scopes to
+`PoolReplenishmentService` alone.
+
+**Test for "never blocks on a live LLM call" simulates the `@Async` proxy's
+behavior inside the mock, rather than booting a Spring context.** The rest of
+this repo's unit tests avoid a Spring context entirely (plain mocks, no
+`@SpringBootTest`), and the actual non-blocking guarantee here comes from
+Spring's `@Async` proxy on `PoolReplenishmentService.replenish`, which a plain
+mock of that class cannot itself exercise -- calling a real, unproxied instance
+synchronously in a unit test would trivially block, proving nothing about
+`NameService`. Instead, `NameServiceTest`'s
+`getNames_should_ReturnWithoutBlocking_When_ReplenishSimulatesASlowProvider`
+stubs `replenish(...)` with a Mockito `Answer` that mimics exactly what the real
+proxy does at runtime -- hand off to a background thread and return
+immediately -- with a deliberately slow (300ms) simulated LLM call on that
+thread, then asserts `getNames` returns in under 100ms and that the slow work
+still completes shortly after. This is a regression test against `NameService`
+itself synchronously waiting on replenishment (e.g. via `.get()` on a returned
+future, or a same-bean call bypassing the `@Async` proxy) -- it does not
+re-verify Spring's own `@Async` machinery, which is out of scope for a unit
+test and already relied on elsewhere in this codebase.
+
+**`NameBrowserController`'s existing curated-only browse slice updated to pass
+`NameSourceFilter.CURATED` explicitly**, rather than left broken by the
+`NameService.getNames` signature change -- this keeps its documented "no source
+toggle yet" behavior identical to before this PR, since Week 6 (not this PR) is
+where that controller gets a real toggle.

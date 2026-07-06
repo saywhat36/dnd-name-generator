@@ -9,6 +9,14 @@ public interface NameRepository extends JpaRepository<Name, Long> {
             Race race, Gender gender, NameStatus status, NameSource source);
 
     /**
+     * Backs the CURATED/AI_GENERATED/BOTH source toggle in NameService.getNames --
+     * BOTH queries CURATED and AI_GENERATED together in one call rather than two
+     * separate queries merged in application code.
+     */
+    List<Name> findByRaceAndGenderAndStatusAndSourceIn(
+            Race race, Gender gender, NameStatus status, List<NameSource> sources);
+
+    /**
      * Used by PoolReplenishmentService both to check the per-combo pool cap
      * (ACTIVE/AI_GENERATED count) and to detect a combo with no CURATED
      * examples yet (see docs/DECISIONS.md, "PoolReplenishmentService" --

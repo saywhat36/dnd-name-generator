@@ -56,8 +56,8 @@ Status legend: not started / in progress / done
 - [x] Per-combo pool cap, checked before generating
 - [x] Global LLM budget check inside the replenishment path (not in a
   servlet filter -- standard requests never reach one)
-- [ ] Three-way source toggle: CURATED / AI_GENERATED / BOTH
-- [ ] Confirm requests never block on a live LLM call (verify via a
+- [x] Three-way source toggle: CURATED / AI_GENERATED / BOTH
+- [x] Confirm requests never block on a live LLM call (verify via a
   slow/mocked provider in a test)
 - [x] Test: concurrent replenishment triggers for the same combo result
   in exactly one generation call (stampede guard verification)

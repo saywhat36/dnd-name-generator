@@ -2,6 +2,7 @@ package com.dndnamegen.namegen.web;
 
 import com.dndnamegen.namegen.name.Gender;
 import com.dndnamegen.namegen.name.NameService;
+import com.dndnamegen.namegen.name.NameSourceFilter;
 import com.dndnamegen.namegen.name.Race;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -31,13 +32,13 @@ public class NameBrowserController {
         model.addAttribute("genders", Gender.values());
         model.addAttribute("selectedRace", DEFAULT_RACE);
         model.addAttribute("selectedGender", DEFAULT_GENDER);
-        model.addAttribute("names", nameService.getNames(DEFAULT_RACE, DEFAULT_GENDER));
+        model.addAttribute("names", nameService.getNames(DEFAULT_RACE, DEFAULT_GENDER, NameSourceFilter.CURATED));
         return "index";
     }
 
     @GetMapping("/browse")
     public String browse(@RequestParam Race race, @RequestParam Gender gender, Model model) {
-        model.addAttribute("names", nameService.getNames(race, gender));
+        model.addAttribute("names", nameService.getNames(race, gender, NameSourceFilter.CURATED));
         return "index :: list";
     }
 }
