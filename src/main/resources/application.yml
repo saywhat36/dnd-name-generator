@@ -36,3 +36,10 @@ app:
     # Illustrative starter list, not exhaustive -- extend as real/famous names
     # turn up in generated output. Case-insensitive match.
     blocklist: Harry Potter, Frodo Baggins, Gandalf, Legolas, Aragorn, Elon Musk
+  async:
+    pool-replenishment:
+      # Small bounded pool -- replenishment is a background task, not a
+      # request-serving path, so there's no need for a large thread count.
+      core-pool-size: 2
+      max-pool-size: 4
+      queue-capacity: 50
