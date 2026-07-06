@@ -31,7 +31,7 @@ Status legend: not started / in progress / done
 ### Week 2 -- Structured output
 - [x] `NameSuggestion` record, structured output converter in
   `NameGenerationService`
-- [ ] Externalized, versioned prompt (`name-generation-v1.st`), few-shot
+- [x] Externalized, versioned prompt (`name-generation-v1.st`), few-shot
   examples pulled from CURATED rows only
 - [ ] `QualityGateService` (length, charset, blocklist)
 - [ ] `DeduplicationService` (pre-filter) + DB unique constraint as the

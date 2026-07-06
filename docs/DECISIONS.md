@@ -345,3 +345,25 @@ gate, dedup, and the native insert path) rather than bundled here. The
 prompt passed to `generateNameSuggestions` is still a raw string in this
 PR -- externalizing it to `name-generation-v1.st` is the next Week 2 item,
 not this one.
+
+## 2026-07-06: Externalized `name-generation-v1.st` prompt template with
+CURATED-only few-shot examples
+Second Week 2 slice. Added `src/main/resources/prompts/name-generation-v1.st`
+(loaded as a classpath `Resource` in the new `PromptTemplateConfig`, which
+also holds `NAME_GENERATION_PROMPT_VERSION = "v1"` as a constant kept in
+sync with the filename per the prompt-versioning rationale in
+`docs/ARCHITECTURE.md`) and a new
+`NameGenerationService.generateNameSuggestions(Race, Gender, int)` overload
+that renders the template with few-shot examples queried via the existing
+`NameRepository.findByRaceAndGenderAndStatusAndSource(...)`, hardcoded to
+`NameSource.CURATED` / `NameStatus.ACTIVE` -- never `AI_GENERATED` or
+`AI_REFINED`, per the hard rule against self-imitation drift. The
+raw-string `generateNameSuggestions(String)` overload from the previous PR
+is kept and reused internally rather than duplicated, since the actual
+`ChatClient` call/structured-output path doesn't change, only how the
+prompt text is produced.
+
+Quality gate, deduplication, the native insert path, retry, and
+`generation_log` writes are still not wired in -- those are the next four
+Week 2 items -- so this PR's new method returns raw, unfiltered
+`NameSuggestion`s, same as before.
