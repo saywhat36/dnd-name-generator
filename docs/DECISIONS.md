@@ -415,3 +415,35 @@ per `docs/ARCHITECTURE.md`, wiring it into the actual generate -> filter ->
 insert pipeline happens in `PoolReplenishmentService` (Week 3), alongside
 `DeduplicationService` and `NameInsertDao` (both still separate,
 not-yet-landed Week 2 items).
+
+## 2026-07-06: `DeduplicationService` -- pre-filter, DB constraint remains
+the correctness guarantee
+Fourth Week 2 slice. Added `DeduplicationService.filterDuplicates(Race,
+Gender, List<String>)`, which drops a candidate if its normalized form
+already exists among stored rows for that race/gender (via a new
+`NameRepository.findNormalizedNameByRaceAndGender(...)` derived
+projection query), or if it collides with an earlier candidate already
+kept in the same batch. Per the rationale already recorded above ("DB
+unique constraint, not app-level dedup, as the correctness mechanism"),
+this is explicitly an optimization to avoid wasted generation under
+normal conditions -- two concurrent generations for the same
+still-empty race/gender pool can both pass this check before either
+inserts, so `NameInsertDao`'s `ON CONFLICT DO NOTHING` (not yet landed)
+remains the actual guarantee.
+
+The existing-row lookup queries **all** rows for the race/gender,
+regardless of `status` or `source` -- the
+`(normalized_name, race, gender)` unique constraint applies to every row
+in the table, not just `ACTIVE`/`CURATED` ones, so a pre-filter that only
+checked active curated names would miss real collisions against
+`FLAGGED`/`REJECTED`/`AI_GENERATED` rows and let doomed inserts through
+to the DB constraint unnecessarily.
+
+`DeduplicationService.normalize(String)` is exposed as a public static
+method implementing the canonical form from `docs/ARCHITECTURE.md` (trim,
+lowercase, Unicode NFC) -- the same normalization
+[dnd-name-generator#20](https://github.com/saywhat36/dnd-name-generator/issues/20)
+flagged as missing from `QualityGateService`. Kept in one place here
+rather than duplicated, so whichever component computes `normalized_name`
+for storage (`NameInsertDao`, next Week 2 item) can reuse it instead of
+re-implementing the same trim/lowercase/NFC logic.
