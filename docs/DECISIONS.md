@@ -367,3 +367,16 @@ Quality gate, deduplication, the native insert path, retry, and
 `generation_log` writes are still not wired in -- those are the next four
 Week 2 items -- so this PR's new method returns raw, unfiltered
 `NameSuggestion`s, same as before.
+
+Race/gender are passed to the template as `race.name()` / `gender.name()`
+explicitly, not the enum objects themselves -- caught in review: `Map.of()`
+would otherwise rely on `Race`/`Gender` having no custom `toString()`, which
+is true today but would silently change what "v1" renders if either enum
+ever gained one, without the filename-encoded version actually changing to
+match. Also caught in review, deliberately not fixed here: if a race/gender
+combo has zero CURATED rows, `examples` renders as an empty string and the
+template still gets sent to the model with a hollow "match these examples"
+section and nothing to match. No guard is added yet since Week 2 has no
+per-combo skip/threshold logic until `PoolReplenishmentService` (Week 3)
+owns pool-cap and generation-trigger decisions -- tracked here rather than
+worked around locally so it isn't forgotten.

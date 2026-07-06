@@ -15,11 +15,13 @@ import com.dndnamegen.namegen.name.Race;
 import com.dndnamegen.namegen.name.dto.NameSuggestion;
 import java.lang.reflect.ParameterizedType;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.io.ClassPathResource;
 
 class NameGenerationServiceTest {
 
@@ -77,5 +79,22 @@ class NameGenerationServiceTest {
                 .findByRaceAndGenderAndStatusAndSource(
                         Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, NameSource.CURATED);
         verify(chatClient).prompt(expectedPrompt);
+    }
+
+    @Test
+    void nameGenerationPromptV1Resource_should_RenderAllPlaceholders_When_Loaded() {
+        PromptTemplate realTemplate =
+                PromptTemplate.builder().resource(new ClassPathResource("prompts/name-generation-v1.st")).build();
+
+        String rendered = realTemplate.render(
+                Map.of("race", "ELF", "gender", "FEMININE", "count", 5, "examples", "Aelric, Sylvaine"));
+
+        assertThat(rendered)
+                .contains("5")
+                .contains("ELF")
+                .contains("FEMININE")
+                .contains("Aelric, Sylvaine")
+                .doesNotContain("{")
+                .doesNotContain("}");
     }
 }

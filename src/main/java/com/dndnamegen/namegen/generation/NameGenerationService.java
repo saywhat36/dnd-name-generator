@@ -47,7 +47,7 @@ public class NameGenerationService {
                 .collect(Collectors.joining(", "));
 
         String promptText = nameGenerationPromptTemplate.render(
-                Map.of("race", race, "gender", gender, "count", count, "examples", examples));
+                Map.of("race", race.name(), "gender", gender.name(), "count", count, "examples", examples));
 
         return generateNameSuggestions(promptText);
     }
