@@ -1,0 +1,32 @@
+# Production profile -- deployment overlay, additive on top of application.yml.
+#
+# Activated TOGETHER with the provider profile, e.g. on Render:
+#   SPRING_PROFILES_ACTIVE=prod,gemini
+# so the Gemini config in application-gemini.yml is reused as-is rather than
+# duplicated here (per the per-provider-file convention in docs/ARCHITECTURE.md).
+#
+# Local dev is unaffected: it runs with NO active profile and keeps using
+# compose.yaml via Spring Boot's Docker Compose support. Nothing below changes
+# `./mvnw spring-boot:run`.
+spring:
+  # The deployed jar must never try to start a local Docker Postgres. Spring
+  # Boot's docker-compose support is on by default whenever a compose file is
+  # on the classpath/working dir; disable it explicitly for the container.
+  docker:
+    compose:
+      enabled: false
+  datasource:
+    # Neon connection details, supplied as env vars on the host (see
+    # docs/DEPLOYMENT.md). The URL must be JDBC form with sslmode=require, and
+    # must point at Neon's DIRECT (non-pooled) endpoint -- Flyway takes a
+    # session-level advisory lock during migration, which Neon's -pooler
+    # (PgBouncer, transaction mode) endpoint breaks.
+    #   jdbc:postgresql://ep-xxx.<region>.aws.neon.tech/namegen?sslmode=require
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+
+# Render (and most container hosts) inject the port to bind on via $PORT and
+# route external traffic to it. Fall back to 8080 for local `-Pprod` testing.
+server:
+  port: ${PORT:8080}
