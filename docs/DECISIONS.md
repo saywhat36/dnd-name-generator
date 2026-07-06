@@ -345,3 +345,38 @@ gate, dedup, and the native insert path) rather than bundled here. The
 prompt passed to `generateNameSuggestions` is still a raw string in this
 PR -- externalizing it to `name-generation-v1.st` is the next Week 2 item,
 not this one.
+
+## 2026-07-06: Externalized `name-generation-v1.st` prompt template with
+CURATED-only few-shot examples
+Second Week 2 slice. Added `src/main/resources/prompts/name-generation-v1.st`
+(loaded as a classpath `Resource` in the new `PromptTemplateConfig`, which
+also holds `NAME_GENERATION_PROMPT_VERSION = "v1"` as a constant kept in
+sync with the filename per the prompt-versioning rationale in
+`docs/ARCHITECTURE.md`) and a new
+`NameGenerationService.generateNameSuggestions(Race, Gender, int)` overload
+that renders the template with few-shot examples queried via the existing
+`NameRepository.findByRaceAndGenderAndStatusAndSource(...)`, hardcoded to
+`NameSource.CURATED` / `NameStatus.ACTIVE` -- never `AI_GENERATED` or
+`AI_REFINED`, per the hard rule against self-imitation drift. The
+raw-string `generateNameSuggestions(String)` overload from the previous PR
+is kept and reused internally rather than duplicated, since the actual
+`ChatClient` call/structured-output path doesn't change, only how the
+prompt text is produced.
+
+Quality gate, deduplication, the native insert path, retry, and
+`generation_log` writes are still not wired in -- those are the next four
+Week 2 items -- so this PR's new method returns raw, unfiltered
+`NameSuggestion`s, same as before.
+
+Race/gender are passed to the template as `race.name()` / `gender.name()`
+explicitly, not the enum objects themselves -- caught in review: `Map.of()`
+would otherwise rely on `Race`/`Gender` having no custom `toString()`, which
+is true today but would silently change what "v1" renders if either enum
+ever gained one, without the filename-encoded version actually changing to
+match. Also caught in review, deliberately not fixed here: if a race/gender
+combo has zero CURATED rows, `examples` renders as an empty string and the
+template still gets sent to the model with a hollow "match these examples"
+section and nothing to match. No guard is added yet since Week 2 has no
+per-combo skip/threshold logic until `PoolReplenishmentService` (Week 3)
+owns pool-cap and generation-trigger decisions -- tracked here rather than
+worked around locally so it isn't forgotten.
