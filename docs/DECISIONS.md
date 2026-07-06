@@ -515,3 +515,36 @@ rethrown -- this method's contract is "best-effort, bounded," and surfacing
 per-attempt failures to `generation_log` is explicitly `PoolReplenishmentService`'s
 job, not this method's, per `docs/ARCHITECTURE.md`'s replenishment-flow
 step 10.
+
+## 2026-07-06: Deployment track -- same-origin on Render + Neon, kept
+separate from the Phase 1 learning roadmap
+Started a parallel effort to get the project to a small deployed product,
+without disturbing the Week 3-6 Spring AI learning items. All deployment
+design and runbook detail lives in a new `docs/DEPLOYMENT.md`; `ROADMAP.md`
+is deliberately untouched. Key choices:
+
+- **Frontend hosting: served from Render, same origin as the API**, not a
+  static site on GitHub Pages. GitHub Pages only serves static files, so
+  adopting it would have meant replacing the server-rendered htmx + Thymeleaf
+  frontend (committed to in `ARCHITECTURE.md`, and the basis for the Phase 3
+  SSE plan) with a fetch/JS SPA -- i.e. quietly rewriting a recorded decision.
+  Same-origin also avoids CORS and, more importantly, avoids cross-origin
+  session cookies, which would directly complicate the session-keyed Week 5
+  favorites/reports. GitHub Pages rejected on that basis.
+- **Database: Neon Postgres** (serverless, stock Postgres 16, genuine free
+  tier). Flyway runs against it unchanged. Two connection-string constraints
+  recorded in `DEPLOYMENT.md`: `sslmode=require`, and use the direct
+  (non-pooled) endpoint because Flyway's session-level advisory lock isn't
+  supported by Neon's PgBouncer transaction-mode pooler.
+- **Additive `prod` profile, not a replacement.** `application-prod.yml`
+  carries only deltas (Neon datasource from env, `spring.docker.compose.enabled=false`,
+  `server.port=${PORT}`); it activates as `prod,gemini` so the existing
+  `application-gemini.yml` provider config is reused, not duplicated. Local
+  dev (`./mvnw spring-boot:run`, no profile, compose.yaml auto-start) is
+  unchanged.
+- **Dockerfile over buildpack** for reproducible pinned builds; tests skipped
+  in the image build since `*IT` tests need Docker/Testcontainers unavailable
+  in a build container. `render.yaml` committed for reproducibility with all
+  secrets `sync: false` (dashboard-only, never in the repo).
+- **Free-tier cold start (~50s after ~15m idle) accepted** for a
+  demo/portfolio deployment rather than paying for an always-on instance.
