@@ -93,8 +93,10 @@ Status legend: not started / in progress / done
   (none yet in Phase 1 -- this becomes active in Phase 3)
 - [ ] Per-session Bucket4j buckets backed by Caffeine with a TTL, not
   an unbounded map
-- [ ] htmx + Thymeleaf frontend: race buttons, gender selector, toggle,
-  favorite/report actions
+- [x] htmx + Thymeleaf frontend: race buttons, gender buttons, source
+  toggle (as button groups, not dropdowns)
+- [ ] htmx + Thymeleaf frontend: favorite/report actions -- deferred
+  until Week 5's favorite/report backend exists
 
 ### Deferred within Phase 1 (optional, after core weeks)
 - [ ] Memory/conversational refinement: `ChatMemory` +

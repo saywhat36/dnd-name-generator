@@ -29,10 +29,11 @@ class NameBrowserControllerTest {
     @MockBean private NameService nameService;
 
     @Test
-    void index_should_RenderDefaultRaceAndGenderResults_When_PageLoads() throws Exception {
+    void index_should_RenderDefaultRaceGenderAndSourceResults_When_PageLoads() throws Exception {
         Name curatedName = mock(Name.class);
         when(curatedName.getDisplayName()).thenReturn("Adrie");
-        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED)).thenReturn(List.of(curatedName));
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED))
+                .thenReturn(List.of(curatedName));
 
         mockMvc.perform(get("/"))
                 .andExpect(status().isOk())
@@ -45,7 +46,8 @@ class NameBrowserControllerTest {
     void browse_should_RenderNamesForRequestedRaceAndGender_When_ParamsAreValid() throws Exception {
         Name curatedName = mock(Name.class);
         when(curatedName.getDisplayName()).thenReturn("Argran");
-        when(nameService.getNames(Race.HALF_ORC, Gender.MASCULINE, NameSourceFilter.CURATED)).thenReturn(List.of(curatedName));
+        when(nameService.getNames(Race.HALF_ORC, Gender.MASCULINE, NameSourceFilter.CURATED))
+                .thenReturn(List.of(curatedName));
 
         mockMvc.perform(get("/browse").param("race", "HALF_ORC").param("gender", "MASCULINE"))
                 .andExpect(status().isOk())
@@ -55,11 +57,34 @@ class NameBrowserControllerTest {
     }
 
     @Test
-    void browse_should_RenderEmptyMessage_When_NoCuratedNamesExist() throws Exception {
+    void browse_should_PassThroughRequestedSource_When_SourceParamIsGiven() throws Exception {
+        Name aiName = mock(Name.class);
+        when(aiName.getDisplayName()).thenReturn("Sylvaine");
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.BOTH))
+                .thenReturn(List.of(aiName));
+
+        mockMvc.perform(get("/browse").param("race", "ELF").param("gender", "FEMININE").param("source", "BOTH"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Sylvaine")));
+
+        verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE), eq(NameSourceFilter.BOTH));
+    }
+
+    @Test
+    void browse_should_RenderEmptyMessage_When_NoNamesExistForSelection() throws Exception {
         when(nameService.getNames(Race.HUMAN, Gender.MASCULINE, NameSourceFilter.CURATED)).thenReturn(List.of());
 
         mockMvc.perform(get("/browse").param("race", "HUMAN").param("gender", "MASCULINE"))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString("No curated names yet")));
+                .andExpect(content().string(containsString("No names yet for this race/gender/source")));
+    }
+
+    @Test
+    void browse_should_ReturnBadRequest_When_SourceIsInvalid() throws Exception {
+        mockMvc.perform(get("/browse")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "NOT_A_REAL_SOURCE"))
+                .andExpect(status().isBadRequest());
     }
 }

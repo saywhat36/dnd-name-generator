@@ -6,38 +6,59 @@
     <!-- htmx via CDN for this minimal browse-only slice -- see docs/DECISIONS.md
          for why a webjar dependency isn't warranted yet. -->
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+        .toggle-group { margin-bottom: 0.5rem; }
+        .toggle-group button { margin-right: 0.25rem; }
+        .toggle-group button.selected { font-weight: bold; text-decoration: underline; }
+    </style>
 </head>
 <body>
 <h1>D&amp;D Name Generator</h1>
 
-<!-- Browse-only: curated names for a race/gender combo. No source toggle,
-     favorite/report actions, or pool-low notice yet -- those depend on
-     Week 3-5 features (PoolReplenishmentService, favorites, reports) that
-     don't exist yet. See docs/DECISIONS.md for the scope of this slice. -->
-<form hx-get="/browse" hx-target="#results" hx-trigger="change">
-    <label for="race">Race</label>
-    <select id="race" name="race">
-        <option
+<!-- Race/gender/source picker, each rendered as a button group -- clicking a button
+     both selects it (highlighted via the "selected" class, computed server-side from
+     selectedRace/selectedGender/selectedSource) and immediately triggers /browse with
+     that selection, swapping this whole fragment so the newly-clicked button re-renders
+     highlighted. No favorite/report actions or pool-low notice yet -- those depend on
+     Week 5 (favorites/reports) and Week 4 (provider switching) slices that don't exist
+     yet. See docs/DECISIONS.md for the scope of this slice. -->
+<div id="browser" th:fragment="browser">
+    <div class="toggle-group" role="group" aria-label="Race">
+        <button
+            type="button"
             th:each="r : ${races}"
-            th:value="${r}"
             th:text="${r}"
-            th:selected="${r == selectedRace}"></option>
-    </select>
+            th:classappend="${r == selectedRace} ? 'selected' : ''"
+            th:attr="hx-get=@{/browse(race=${r},gender=${selectedGender},source=${selectedSource})}"
+            hx-target="#browser"
+            hx-swap="outerHTML"></button>
+    </div>
 
-    <label for="gender">Gender</label>
-    <select id="gender" name="gender">
-        <option
+    <div class="toggle-group" role="group" aria-label="Gender">
+        <button
+            type="button"
             th:each="g : ${genders}"
-            th:value="${g}"
             th:text="${g}"
-            th:selected="${g == selectedGender}"></option>
-    </select>
-</form>
+            th:classappend="${g == selectedGender} ? 'selected' : ''"
+            th:attr="hx-get=@{/browse(race=${selectedRace},gender=${g},source=${selectedSource})}"
+            hx-target="#browser"
+            hx-swap="outerHTML"></button>
+    </div>
 
-<div id="results">
-    <ul th:fragment="list">
+    <div class="toggle-group" role="group" aria-label="Source">
+        <button
+            type="button"
+            th:each="s : ${sources}"
+            th:text="${s}"
+            th:classappend="${s == selectedSource} ? 'selected' : ''"
+            th:attr="hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${s})}"
+            hx-target="#browser"
+            hx-swap="outerHTML"></button>
+    </div>
+
+    <ul>
         <li th:each="n : ${names}" th:text="${n.displayName}"></li>
-        <li th:if="${names.isEmpty()}">No curated names yet for this race/gender.</li>
+        <li th:if="${names.isEmpty()}">No names yet for this race/gender/source.</li>
     </ul>
 </div>
 </body>
