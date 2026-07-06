@@ -9,6 +9,7 @@ import com.dndnamegen.namegen.name.NameStatus;
 import com.dndnamegen.namegen.name.Race;
 import com.dndnamegen.namegen.name.dto.NameSuggestion;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -134,7 +135,7 @@ public class NameGenerationService {
             List<String> combined = new ArrayList<>(survivors);
             combined.addAll(qualityPassed);
             List<String> updatedSurvivors = deduplicationService.filterDuplicates(race, gender, combined);
-            int accepted = updatedSurvivors.size() - survivors.size();
+            int accepted = acceptedThisAttempt(survivors, qualityPassed, updatedSurvivors);
             int rejectedDuplicate = qualityPassed.size() - accepted;
             survivors = updatedSurvivors;
 
@@ -149,5 +150,34 @@ public class NameGenerationService {
                     rejectedQuality));
         }
         return survivors.size() > count ? new ArrayList<>(survivors.subList(0, count)) : survivors;
+    }
+
+    /**
+     * Counts how many of this attempt's quality-passed candidates actually landed in
+     * {@code updatedSurvivors}, by membership rather than {@code updatedSurvivors.size() -
+     * previousSurvivors.size()}. A size delta would go negative (and inflate the rejected-duplicate
+     * count) if a name from {@code previousSurvivors} got dropped on re-filtering -- possible once
+     * concurrent writers exist (Week 3+), since DeduplicationService re-queries the DB fresh each
+     * call and a name accepted as non-duplicate in an earlier attempt can collide with a row another
+     * process inserted in between attempts.
+     */
+    private static int acceptedThisAttempt(
+            List<String> previousSurvivors, List<String> qualityPassed, List<String> updatedSurvivors) {
+        Map<String, Integer> remaining = new HashMap<>();
+        for (String survivor : updatedSurvivors) {
+            remaining.merge(survivor, 1, Integer::sum);
+        }
+        for (String survivor : previousSurvivors) {
+            remaining.merge(survivor, -1, Integer::sum);
+        }
+        int accepted = 0;
+        for (String candidate : qualityPassed) {
+            Integer count = remaining.get(candidate);
+            if (count != null && count > 0) {
+                accepted++;
+                remaining.put(candidate, count - 1);
+            }
+        }
+        return accepted;
     }
 }
