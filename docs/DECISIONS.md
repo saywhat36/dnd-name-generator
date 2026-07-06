@@ -312,3 +312,20 @@ with no credit card required.
   same eager-autoconfiguration reason described above.
 - `NameGenerationServiceEvalIT` now activates the `gemini` profile and
   checks `GEMINI_API_KEY` instead of `GROQ_API_KEY`.
+
+## 2026-07-06: Session cookie's `Secure` flag made configurable, defaulting
+to `true`
+`SessionIdFilter` hardcoded `.secure(true)` on the minted cookie. Browsers
+drop `Secure` cookies received over plain HTTP, and local dev runs on
+plain `http://localhost` with no TLS anywhere in the stack -- so the
+cookie was minted fresh on every single request in local dev, silently
+breaking the sole identity mechanism for favorites/reports. Caught via
+review of #1, but the fix never actually landed before merge.
+
+Fixed by injecting the flag as `app.session-cookie.secure`
+(`SESSION_COOKIE_SECURE` env var), defaulting to `true` so production
+stays secure-by-default; local dev sets `SESSION_COOKIE_SECURE=false` to
+persist the cookie over HTTP. Documented in `README.md`. Considered
+switching the default to `false` instead and requiring an explicit opt-in
+for production, but that inverts the safer default for a project that
+will eventually run somewhere with real TLS.
