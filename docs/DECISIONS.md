@@ -548,3 +548,45 @@ is deliberately untouched. Key choices:
   secrets `sync: false` (dashboard-only, never in the repo).
 - **Free-tier cold start (~50s after ~15m idle) accepted** for a
   demo/portfolio deployment rather than paying for an always-on instance.
+
+## 2026-07-06: `V3` full curated seed -- real 5e dataset, gendered names only
+Loaded the real curated dataset via a new versioned Flyway migration
+`V3__seed_curated_names_full.sql`, consistent with the existing `V2` seed
+pattern (native `INSERT`, now with `ON CONFLICT (normalized_name, race,
+gender) DO NOTHING` added for idempotency). Key choices, all deliberate:
+
+- **Gendered names only (594 rows across 6 races: Dwarf, Elf, Gnome,
+  Halfling, Half-Orc, Tiefling).** The source data also has non-gender
+  categories -- Elf `Child`, Tiefling `Virtue`, and Dwarf/Gnome `Clan` /
+  Elf/Halfling `Family` surnames. Deferred, not loaded. `Child`/`Virtue` are
+  standalone given names that just aren't masculine/feminine; the `Clan`/
+  `Family` lists are surname *components* meant to combine with a first name
+  (like the existing "Dorlin Ironfoot" seed), which the current
+  single-`display_name` serving model has no concept of. Modeling either would
+  mean a schema change (a `name_type` column and/or a new gender value),
+  overriding the recorded "no third gender value" decision -- out of scope for
+  a seed migration and left for a future roadmap item.
+- **Added `HALF_ORC` to the race CHECK on both `names` and `generation_log`.**
+  The source has Half-Orc names; the constraint only had `ORC`. Half-Orc is a
+  distinct race, so `HALF_ORC` was added (and mirrored to the `Race` Java enum)
+  rather than conflating it with `ORC`. Because V1's CHECKs are inline/unnamed,
+  V3 drops and re-adds them by their Postgres-generated names
+  (`names_race_check`, `generation_log_race_check`) -- verified empirically, not
+  assumed (see below).
+- **Full replace, dropping Human.** V3 does `DELETE FROM names WHERE
+  source = 'CURATED'` then inserts the new set. The new data has no Human
+  names, so Human curated coverage is intentionally dropped -- Human joins
+  the constraint-but-no-curated-data races (like Dragonborn) until AI
+  generation or a later seed fills it. Safe DELETE: no `favorites`/
+  `name_reports` rows reference curated names yet (Week 5 unbuilt).
+- **Data cleaning applied:** the raw Dwarf Female list was contaminated (its
+  back half was the Dwarf Male list pasted in reverse) -- truncated to the 32
+  genuine female names. Gnome Female "Alboe/Albaraite" (a slash-separated
+  alternate spelling) reduced to "Alboe". Source typos (e.g. "Zannna") left
+  as-is -- not this migration's job to correct spellings.
+- **Verified** by applying V1 -> V2 -> V3 against a throwaway
+  `postgres:16-alpine` container: migrations apply cleanly (confirming the
+  inline-CHECK constraint names), 594 curated rows land with the expected
+  per-race/gender counts, `HALF_ORC` inserts succeed, and a bogus race value is
+  still rejected. This sidesteps the local Testcontainers/`ryuk` Docker issue
+  noted in earlier decisions -- a plain container + `psql` needs no Testcontainers.
