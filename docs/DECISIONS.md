@@ -481,3 +481,37 @@ Docker/Testcontainers environment issue already affecting `MigrationIT`
 on this machine (`ryuk` image pull failing on Docker API version
 mismatch) -- an environment quirk, not evidence against the approach;
 noted here rather than worked around.
+
+## 2026-07-06: Bounded retry for parse failures and under-yield lives in
+`NameGenerationService`, not a new class
+Sixth Week 2 slice. Added `NameGenerationService.generateValidatedNames(Race,
+Gender, int count)`, which bounded-retries (default 3 attempts, configurable
+via `app.generation.max-attempts`, following the existing `app.*` `@Value`
+convention) the generate -> quality-gate -> dedup step as a unit -- both when
+structured output fails to parse (a `RuntimeException` from the
+`ChatClient.entity()` call is caught and the attempt is retried) and when a
+successful attempt under-yields (too many candidates rejected by
+`QualityGateService` or as duplicates against existing rows/each other). Each
+retry only asks the model for the remaining shortfall
+(`count - survivors.size()`), and accumulated survivors are re-run through
+`DeduplicationService.filterDuplicates` alongside each new attempt's
+quality-passed candidates, so a name repeated across two separate attempts is
+still caught even though nothing has been inserted yet to catch it via the DB
+constraint. Result is capped to `count` if a single attempt yields more than
+requested (a model ignoring the count instruction).
+
+Considered a new dedicated class (matching the one-class-per-slice pattern of
+`QualityGateService`/`DeduplicationService`/`NameInsertDao`), but
+`docs/ARCHITECTURE.md`'s package layout doesn't list one, and this method's
+only real responsibility is retrying the `ChatClient` call it already owns --
+splitting it out would just relocate a loop around a method already on this
+class. `PoolReplenishmentService` (Week 3) will call
+`generateValidatedNames` directly rather than reimplementing retry logic, and
+will own the remaining replenishment-flow responsibilities this method
+deliberately does not: `NameInsertDao` writes, `generation_log` writes for
+every attempt (including failures), the stampede guard, and the pool-cap /
+global-budget checks. A parse failure that exhausts all retries is not
+rethrown -- this method's contract is "best-effort, bounded," and surfacing
+per-attempt failures to `generation_log` is explicitly `PoolReplenishmentService`'s
+job, not this method's, per `docs/ARCHITECTURE.md`'s replenishment-flow
+step 10.
