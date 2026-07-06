@@ -47,3 +47,15 @@ app:
       core-pool-size: 2
       max-pool-size: 4
       queue-capacity: 8
+  pool-replenishment:
+    # Ceiling on AI_GENERATED/ACTIVE rows per race+gender combo -- the second
+    # cost circuit breaker alongside the daily budget below.
+    cap-per-combo: 20
+    # How many names to request per replenishment cycle, capped further by
+    # however much headroom remains under cap-per-combo.
+    batch-size: 5
+    budget:
+      # Global ceiling on real generation calls per day, across all combos --
+      # a safety guardrail, not a cost optimization (see docs/DECISIONS.md,
+      # "Pool justified by latency and variety, not token cost").
+      max-calls-per-day: 200

@@ -6,3 +6,11 @@ spring:
         chat:
           options:
             model: gemini-2.5-flash
+
+app:
+  generation:
+    # Recorded on AI_GENERATED rows for lineage (see NameInsertDao). Lives here
+    # rather than the base application.yml since it's tied to whichever
+    # provider profile is active -- Week 4's second provider gets its own
+    # value in its own application-<provider>.yml.
+    provider: gemini
