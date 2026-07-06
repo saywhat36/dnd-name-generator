@@ -636,3 +636,47 @@ this change, by reproducing the identical failure against the already-merged
 runtime verification for this slice relied on the manual curl checks above
 instead. Revisit once a Java 21/23 JDK is available locally or Mockito/Byte
 Buddy ships Java 26 support.
+
+## 2026-07-06: `AsyncConfig` -- explicit executor for pool replenishment
+First Week 3 slice. Added `AsyncConfig` (`config/`) implementing
+`AsyncConfigurer`, with a `ThreadPoolTaskExecutor` bean named
+`poolReplenishmentExecutor` (core/max pool size and queue capacity
+configurable via `app.async.pool-replenishment.*`, following the existing
+`app.*` `@Value`-injection convention rather than a `@ConfigurationProperties`
+class). Landed ahead of `PoolReplenishmentService` itself (next Week 3 slice)
+since the roadmap calls it out as its own item, and it has no dependency on
+the service that will use it.
+
+Also registered a logging `AsyncUncaughtExceptionHandler` as a
+defense-in-depth backstop, not the primary failure-logging mechanism --
+`@Async` only routes an uncaught exception to this handler for `void`
+methods (never surfaces it to the caller), but the actual "log every
+replenishment attempt to `generation_log`, success or failure" contract
+described in `docs/ARCHITECTURE.md` belongs in `PoolReplenishmentService`'s
+own explicit `try/catch` with the log write in `finally`, landing in the
+next slice. This handler exists so that any exception escaping *before*
+that try/catch is entered (e.g. a bean-wiring or proxy-level failure) still
+gets logged somewhere instead of vanishing silently.
+
+No dedicated test added -- matches the existing pattern for `ChatClientConfig`
+and `PromptTemplateConfig` (plain `@Bean` wiring with no branching logic of
+its own); behavior is exercised indirectly once `PoolReplenishmentService`
+uses this executor.
+
+Caught in review of #29: `queue-capacity` was initially set to 50 against a
+`max-pool-size` of 4 -- since `ThreadPoolExecutor` only grows past
+`core-pool-size` once its queue is full, a queue that deep would make
+`max-pool-size` effectively dead configuration under normal load. Reduced
+`queue-capacity` to 8 so the pool can actually reach 4 threads under
+moderate contention. Also caught: the class javadoc overclaimed that
+`@Async` failures "never surface to the caller" -- true for exceptions
+thrown inside the async method body, but queue/pool saturation triggers a
+synchronous `TaskRejectedException` at the submission call site instead,
+which bypasses `getAsyncUncaughtExceptionHandler()` entirely. Javadoc
+reworded to call this out explicitly. Two follow-ups filed rather than
+fixed here, since neither has a caller yet to fix against:
+[#30](https://github.com/saywhat36/dnd-name-generator/issues/30) (no bounds
+validation on the core/max/queue config values) and
+[#31](https://github.com/saywhat36/dnd-name-generator/issues/31)
+(`PoolReplenishmentService`'s eventual caller must catch
+`TaskRejectedException` rather than let it fail a user-facing request).

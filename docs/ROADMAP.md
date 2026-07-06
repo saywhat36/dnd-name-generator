@@ -45,7 +45,7 @@ Status legend: not started / in progress / done
 
 ### Week 3 -- Pool + toggle
 - [ ] `PoolReplenishmentService`, `@Async`, threshold-triggered
-- [ ] Explicit executor config (`AsyncConfig`) -- do not rely on
+- [x] Explicit executor config (`AsyncConfig`) -- do not rely on
   `SimpleAsyncTaskExecutor` defaults
 - [ ] Explicit try/catch + `generation_log` write in `finally` --
   `@Async` failures are silent otherwise
