@@ -590,3 +590,49 @@ gender) DO NOTHING` added for idempotency). Key choices, all deliberate:
   per-race/gender counts, `HALF_ORC` inserts succeed, and a bogus race value is
   still rejected. This sidesteps the local Testcontainers/`ryuk` Docker issue
   noted in earlier decisions -- a plain container + `psql` needs no Testcontainers.
+
+## 2026-07-06: Minimal browse-only slice of the Week 6 frontend, built ahead
+of Weeks 3-5
+Wanted a UI for the now-deployed product, but the full Week 6 item (race/
+gender picker, source toggle, favorite/report actions) depends on Weeks 3-5
+(`PoolReplenishmentService`, provider switching, favoriting/reporting), none
+of which are built yet. Rather than reordering `ROADMAP.md` or waiting,
+built a deliberately partial slice: `NameBrowserController` (new `web/`
+package, matching `ARCHITECTURE.md`'s package layout) with `GET /` (full
+page) and `GET /browse` (htmx fragment, returns the `index :: list`
+fragment), backed directly by the existing `NameService.getNames(Race,
+Gender)` -- which already hardcodes `CURATED`/`ACTIVE` today, so this slice
+needed no service changes. No source toggle, no favorite/report buttons, no
+pool-low notice -- those still land with Week 6 proper once Weeks 3-5 exist.
+`ROADMAP.md` itself is left unchanged; this isn't a reordering, just an
+early, intentionally incomplete slice of one of its items.
+
+Added `spring-boot-starter-thymeleaf` (previously absent). htmx is pulled
+from a CDN `<script>` tag rather than a webjar dependency -- simplest option
+for one page; revisit if the real Week 6 build wants a pinned/offline copy.
+The results fragment is defined inline in `index.html` via
+`th:fragment="list"` rather than a separate `templates/fragments/` file,
+since there's only one fragment so far; splitting it out is deferred until
+a second fragment actually exists.
+
+Verified by running the app locally against real Postgres
+(`./mvnw spring-boot:run`, `SESSION_COOKIE_SECURE=false`) and curling `/`
+and `/browse` directly -- confirmed the default page renders real V3 curated
+names with the correct dropdown selection state, `/browse` returns a bare
+`<ul>` fragment suitable for an htmx swap, and the empty-race case (e.g.
+Human, dropped in V3) renders the "no curated names yet" message. Also
+confirmed the explicit `@GetMapping("/")` takes priority over Spring Boot's
+`WelcomePageHandlerMapping` auto-detection of `templates/index.html` (it
+logs "Adding welcome page template: index" regardless, but the explicit
+controller mapping wins).
+
+Could not execute `NameBrowserControllerTest` (or the pre-existing
+`NameControllerTest`) via `./mvnw test` on this machine -- only JDK 26 is
+installed locally, and Mockito's Byte Buddy inline mock maker doesn't yet
+support it (`Java 26 (70) is not supported ... officially supports Java
+23`). Confirmed this is a pre-existing local-environment gap, not caused by
+this change, by reproducing the identical failure against the already-merged
+`NameControllerTest`. Test code compiles cleanly (`./mvnw test-compile`);
+runtime verification for this slice relied on the manual curl checks above
+instead. Revisit once a Java 21/23 JDK is available locally or Mockito/Byte
+Buddy ships Java 26 support.

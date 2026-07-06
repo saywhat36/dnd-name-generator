@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <title>D&amp;D Name Generator</title>
+    <!-- htmx via CDN for this minimal browse-only slice -- see docs/DECISIONS.md
+         for why a webjar dependency isn't warranted yet. -->
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+<h1>D&amp;D Name Generator</h1>
+
+<!-- Browse-only: curated names for a race/gender combo. No source toggle,
+     favorite/report actions, or pool-low notice yet -- those depend on
+     Week 3-5 features (PoolReplenishmentService, favorites, reports) that
+     don't exist yet. See docs/DECISIONS.md for the scope of this slice. -->
+<form hx-get="/browse" hx-target="#results" hx-trigger="change">
+    <label for="race">Race</label>
+    <select id="race" name="race">
+        <option
+            th:each="r : ${races}"
+            th:value="${r}"
+            th:text="${r}"
+            th:selected="${r == selectedRace}"></option>
+    </select>
+
+    <label for="gender">Gender</label>
+    <select id="gender" name="gender">
+        <option
+            th:each="g : ${genders}"
+            th:value="${g}"
+            th:text="${g}"
+            th:selected="${g == selectedGender}"></option>
+    </select>
+</form>
+
+<div id="results">
+    <ul th:fragment="list">
+        <li th:each="n : ${names}" th:text="${n.displayName}"></li>
+        <li th:if="${names.isEmpty()}">No curated names yet for this race/gender.</li>
+    </ul>
+</div>
+</body>
+</html>
