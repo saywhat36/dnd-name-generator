@@ -1,5 +1,6 @@
 package com.dndnamegen.namegen.generation;
 
+import com.dndnamegen.namegen.config.PromptTemplateConfig;
 import com.dndnamegen.namegen.name.Gender;
 import com.dndnamegen.namegen.name.Name;
 import com.dndnamegen.namegen.name.NameRepository;
@@ -35,6 +36,7 @@ public class NameGenerationService {
     private final NameRepository nameRepository;
     private final QualityGateService qualityGateService;
     private final DeduplicationService deduplicationService;
+    private final GenerationLogRepository generationLogRepository;
     private final int maxGenerationAttempts;
 
     public NameGenerationService(
@@ -43,12 +45,14 @@ public class NameGenerationService {
             NameRepository nameRepository,
             QualityGateService qualityGateService,
             DeduplicationService deduplicationService,
+            GenerationLogRepository generationLogRepository,
             @Value("${app.generation.max-attempts:3}") int maxGenerationAttempts) {
         this.chatClient = chatClient;
         this.nameGenerationPromptTemplate = nameGenerationPromptTemplate;
         this.nameRepository = nameRepository;
         this.qualityGateService = qualityGateService;
         this.deduplicationService = deduplicationService;
+        this.generationLogRepository = generationLogRepository;
         this.maxGenerationAttempts = maxGenerationAttempts;
     }
 
@@ -96,14 +100,14 @@ public class NameGenerationService {
         String examples = curatedExamples(race, gender);
         List<String> survivors = new ArrayList<>();
         for (int attempt = 1; attempt <= maxGenerationAttempts && survivors.size() < count; attempt++) {
+            int requested = count - survivors.size();
             List<NameSuggestion> suggestions;
             try {
-                suggestions = generateNameSuggestions(race, gender, count - survivors.size(), examples);
+                suggestions = generateNameSuggestions(race, gender, requested, examples);
             } catch (RuntimeException parseFailure) {
                 // Spring AI's BeanOutputConverter wraps a structured-output parse failure in a bare
                 // RuntimeException/IllegalStateException -- no dedicated exception type to catch more
-                // narrowly. Logged so a persistently-failing combo leaves a trace even before Week 3's
-                // generation_log writes land.
+                // narrowly.
                 log.warn(
                         "Structured output parse failure generating {}/{} names (attempt {}/{})",
                         race,
@@ -111,6 +115,13 @@ public class NameGenerationService {
                         attempt,
                         maxGenerationAttempts,
                         parseFailure);
+                generationLogRepository.save(GenerationLog.parseFailure(
+                        race,
+                        gender,
+                        GenerationMode.STANDARD,
+                        PromptTemplateConfig.NAME_GENERATION_PROMPT_VERSION,
+                        requested,
+                        parseFailure.getMessage()));
                 continue;
             }
 
@@ -118,10 +129,24 @@ public class NameGenerationService {
                     .map(NameSuggestion::name)
                     .filter(qualityGateService::passesQualityGate)
                     .toList();
+            int rejectedQuality = suggestions.size() - qualityPassed.size();
 
             List<String> combined = new ArrayList<>(survivors);
             combined.addAll(qualityPassed);
-            survivors = deduplicationService.filterDuplicates(race, gender, combined);
+            List<String> updatedSurvivors = deduplicationService.filterDuplicates(race, gender, combined);
+            int accepted = updatedSurvivors.size() - survivors.size();
+            int rejectedDuplicate = qualityPassed.size() - accepted;
+            survivors = updatedSurvivors;
+
+            generationLogRepository.save(GenerationLog.success(
+                    race,
+                    gender,
+                    GenerationMode.STANDARD,
+                    PromptTemplateConfig.NAME_GENERATION_PROMPT_VERSION,
+                    requested,
+                    accepted,
+                    rejectedDuplicate,
+                    rejectedQuality));
         }
         return survivors.size() > count ? new ArrayList<>(survivors.subList(0, count)) : survivors;
     }

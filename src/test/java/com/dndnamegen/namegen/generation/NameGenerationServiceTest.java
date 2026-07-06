@@ -34,6 +34,7 @@ class NameGenerationServiceTest {
     private final NameRepository nameRepository = mock(NameRepository.class);
     private final QualityGateService qualityGateService = mock(QualityGateService.class);
     private final DeduplicationService deduplicationService = mock(DeduplicationService.class);
+    private final GenerationLogRepository generationLogRepository = mock(GenerationLogRepository.class);
     private final PromptTemplate nameGenerationPromptTemplate = new PromptTemplate(TEMPLATE);
     private final NameGenerationService nameGenerationService = new NameGenerationService(
             chatClient,
@@ -41,6 +42,7 @@ class NameGenerationServiceTest {
             nameRepository,
             qualityGateService,
             deduplicationService,
+            generationLogRepository,
             3);
 
     @Test
@@ -141,6 +143,18 @@ class NameGenerationServiceTest {
 
         assertThat(result).containsExactly("Aelric");
         verify(responseSpec, times(2)).entity(any(ParameterizedTypeReference.class));
+
+        ArgumentCaptor<GenerationLog> logCaptor = ArgumentCaptor.forClass(GenerationLog.class);
+        verify(generationLogRepository, times(2)).save(logCaptor.capture());
+        List<GenerationLog> savedLogs = logCaptor.getAllValues();
+        assertThat(savedLogs.get(0).isParseSuccess()).isFalse();
+        assertThat(savedLogs.get(0).getErrorMessage()).isEqualTo("structured output parse failure");
+        assertThat(savedLogs.get(0).getNamesAccepted()).isNull();
+        assertThat(savedLogs.get(1).isParseSuccess()).isTrue();
+        assertThat(savedLogs.get(1).getNamesRequested()).isEqualTo(1);
+        assertThat(savedLogs.get(1).getNamesAccepted()).isEqualTo(1);
+        assertThat(savedLogs.get(1).getNamesRejectedDuplicate()).isEqualTo(0);
+        assertThat(savedLogs.get(1).getNamesRejectedQuality()).isEqualTo(0);
     }
 
     @Test
@@ -159,6 +173,14 @@ class NameGenerationServiceTest {
         List<String> result = nameGenerationService.generateValidatedNames(Race.ELF, Gender.FEMININE, 2);
 
         assertThat(result).containsExactly("Aelric", "Sylvaine");
+
+        ArgumentCaptor<GenerationLog> logCaptor = ArgumentCaptor.forClass(GenerationLog.class);
+        verify(generationLogRepository, times(2)).save(logCaptor.capture());
+        GenerationLog firstAttemptLog = logCaptor.getAllValues().get(0);
+        assertThat(firstAttemptLog.getNamesRequested()).isEqualTo(2);
+        assertThat(firstAttemptLog.getNamesAccepted()).isEqualTo(1);
+        assertThat(firstAttemptLog.getNamesRejectedQuality()).isEqualTo(1);
+        assertThat(firstAttemptLog.getNamesRejectedDuplicate()).isEqualTo(0);
     }
 
     @Test
@@ -173,6 +195,7 @@ class NameGenerationServiceTest {
 
         assertThat(result).isEmpty();
         verify(chatClient, times(3)).prompt(anyString());
+        verify(generationLogRepository, times(3)).save(any(GenerationLog.class));
     }
 
     @Test
