@@ -21,9 +21,10 @@ public class QualityGateService {
     /**
      * Letters (Unicode-aware, so accented fantasy names are allowed), optionally
      * separated by a single apostrophe, hyphen, or space -- never at the start/end,
-     * never doubled up.
+     * never doubled up. Both straight/curly apostrophes ('/') and ASCII/typographic
+     * hyphens (-/‐/–) are allowed, since LLM output isn't consistent about which it emits.
      */
-    private static final Pattern ALLOWED_CHARACTERS = Pattern.compile("^\\p{L}+(?:['’\\- ]\\p{L}+)*$");
+    private static final Pattern ALLOWED_CHARACTERS = Pattern.compile("^\\p{L}+(?:['’\\-‐– ]\\p{L}+)*$");
 
     private final int minLength;
     private final int maxLength;

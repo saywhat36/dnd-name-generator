@@ -401,6 +401,15 @@ as a property for now since the list is short and the pattern already
 exists for other `app.*` config in this codebase, revisit if it grows
 large enough to need its own file.
 
+Blocklist matching is exact-equality on the trimmed, lowercased candidate
+-- not substring matching. Caught in review: this means "Frodo" (first
+name only) or "Aragorn the Bold" would not match a blocklist entry of
+"Frodo Baggins" or "Aragorn". Accepted as-is for this slice -- the
+starter list is illustrative and short, and substring matching risks
+false positives (e.g. a legitimately generated "Frodolyn" containing
+"Frodo"). Revisit if real generated output shows partial-name evasion is
+a real problem in practice, rather than guessing at a fuzzier match now.
+
 This service is a pre-insert filter only, not a correctness mechanism --
 per `docs/ARCHITECTURE.md`, wiring it into the actual generate -> filter ->
 insert pipeline happens in `PoolReplenishmentService` (Week 3), alongside

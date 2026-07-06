@@ -23,6 +23,13 @@ class QualityGateServiceTest {
     }
 
     @Test
+    void passesQualityGate_should_ReturnTrue_When_NameHasCurlyApostropheOrTypographicDash() {
+        assertThat(qualityGateService.passesQualityGate("O’Brien")).isTrue();
+        assertThat(qualityGateService.passesQualityGate("Aela‐Nym")).isTrue();
+        assertThat(qualityGateService.passesQualityGate("Aela–Nym")).isTrue();
+    }
+
+    @Test
     void passesQualityGate_should_ReturnFalse_When_NameIsNull() {
         assertThat(qualityGateService.passesQualityGate(null)).isFalse();
     }
