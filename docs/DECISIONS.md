@@ -1462,3 +1462,19 @@ instances, not mocks) -- confirmed by actually running `./mvnw test
 -Dtest=RateLimitFilterTest` locally, which passed (4/4), sidestepping the
 pre-existing JDK 26/Mockito inline-mock-maker gap that blocks most other test
 classes in this repo from running locally.
+
+Caught in review of #44, fixed in this PR:
+
+- **Class Javadoc restated the same scaffolding rationale already recorded in
+  this entry and in `docs/ARCHITECTURE.md`'s "Rate limiting" section**,
+  diverging from `SessionIdFilter`'s established terse-Javadoc pattern (a
+  couple of sentences, not a full paragraph re-deriving the reasoning
+  in-code). Trimmed to a two-sentence Javadoc pointing at `docs/DECISIONS.md`
+  for the full reasoning, rather than duplicating it -- this doc/entry pair is
+  now the single source of truth, not the source comment as well.
+- **`Refill.greedy(...)` is deprecated as of bucket4j 8.14.0** (in favor of
+  `Bandwidth.builder()`), functionally identical but flagged for removal in a
+  future major version. Switched `newBucket()` to
+  `Bandwidth.builder().capacity(capacity).refillGreedy(capacity,
+  refillPeriod).build()` -- no behavior change, confirmed by rerunning
+  `RateLimitFilterTest` locally (still 4/4 passing).

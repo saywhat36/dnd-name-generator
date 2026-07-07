@@ -5,7 +5,6 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
-import io.github.bucket4j.Refill;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,23 +15,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Per-session token-bucket rate limiter, keyed on {@link SessionIdFilter#REQUEST_ATTRIBUTE}
- * and backed by a Caffeine cache with a TTL (sessions are just cookies -- nothing else
- * naturally evicts them, so an unbounded map would grow forever).
- *
- * <p><strong>Not registered as a Spring bean, and not applied to any endpoint, in Phase 1.</strong>
- * Per docs/ARCHITECTURE.md's "Rate limiting" section: standard name-serving requests never
- * call the LLM synchronously (replenishment is async, off the request path), so there is
- * nothing on the current request path for a rate limiter to protect -- applying one anyway
- * would just penalize a cheap DB read for no reason. This class exists as ready-to-wire
- * scaffolding for Phase 3's backstory endpoint, the first synchronous LLM call on a request
- * path in this project. Deliberately has no {@code @Component} annotation: Spring Boot's
- * embedded servlet container auto-registers every {@code Filter} bean against {@code /*} by
- * default (the same auto-registration behavior that silently broke an earlier
- * {@code FavoriteControllerTest} assumption -- see docs/DECISIONS.md), so annotating this
- * class now would make it intercept every request today, contradicting "not applied to
- * name-serving." Phase 3 adds the {@code @Component} (or an explicit
- * {@code FilterRegistrationBean} scoped to the backstory URL pattern) at the point it's
- * actually wired to a real endpoint.
+ * and backed by a Caffeine cache with a TTL. Not yet registered as a Spring bean or wired to
+ * any endpoint -- see docs/DECISIONS.md for why.
  */
 public class RateLimitFilter extends OncePerRequestFilter {
 
@@ -70,7 +54,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     private Bucket newBucket() {
-        Bandwidth limit = Bandwidth.classic(capacity, Refill.greedy(capacity, refillPeriod));
+        Bandwidth limit =
+                Bandwidth.builder().capacity(capacity).refillGreedy(capacity, refillPeriod).build();
         return Bucket.builder().addLimit(limit).build();
     }
 }
