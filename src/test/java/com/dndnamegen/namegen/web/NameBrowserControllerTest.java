@@ -221,4 +221,25 @@ class NameBrowserControllerTest {
 
         verify(poolReplenishmentService).replenish(Race.ELF, Gender.FEMININE);
     }
+
+    /**
+     * replenish(...) is @Async, so isReplenishing(...) reading the in-flight map
+     * immediately afterward in the same request thread would race the executor
+     * thread's own update to that map -- stubbing it false here (as it genuinely
+     * would be, this soon) and still asserting the polling indicator renders proves
+     * generateMore doesn't rely on that racy read for its own response.
+     */
+    @Test
+    void generateMore_should_ShowGeneratingIndicator_When_IsReplenishingHasNotYetFlippedTrue() throws Exception {
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED)).thenReturn(List.of());
+        when(poolReplenishmentService.isReplenishing(Race.ELF, Gender.FEMININE)).thenReturn(false);
+
+        mockMvc.perform(withSession(post("/browse/generate-more")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "AI_GENERATED")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Generating more AI names")))
+                .andExpect(content().string(not(containsString("Generate 5 more AI names"))));
+    }
 }

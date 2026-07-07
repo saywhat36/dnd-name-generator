@@ -1721,3 +1721,32 @@ documented above (`PoolReplenishmentServiceTest` mocks the concrete
 `NameGenerationService`); `./mvnw test-compile` confirms everything compiles,
 and the live-app verification above exercises the actual behavior these tests
 assert.
+
+## 2026-07-07: Caught in review of #49 -- generateMore forces generatingMore
+true rather than trusting isReplenishing(...) for its own response
+`PoolReplenishmentService.replenish(...)` is `@Async`, so its in-flight-map
+update (`inFlightCombos.putIfAbsent`) happens on the executor thread, not
+synchronously before the calling method returns. `NameBrowserController
+.generateMore` was calling `replenish(...)` then immediately populating the
+model via `isReplenishing(...)` in the same request thread -- a genuine race:
+the response to the very click that triggered a cycle could render
+`generatingMore=false` if the executor thread hadn't yet claimed the combo, so
+the polling indicator would never render and the user would see no feedback
+that anything happened (verified this reproduces reliably against the real
+app when hitting `POST /browse/generate-more` on a pool with no prior
+in-flight cycle).
+
+Fixed by having `generateMore` force `generatingMore=true` onto the model
+after calling `populateBrowser`, rather than trusting the racy read for this
+one response. This is correct, not a guess: `generate-more` only runs when the
+button that posted to it was visible, which index.html only renders when
+`!generatingMore` and the pool is below cap -- so by the time this endpoint is
+reached, a cycle has genuinely just been requested. Subsequent polls hit
+`GET /browse`, where `isReplenishing(...)` is read well after the async
+dispatch and is accurate. Regression test added:
+`generateMore_should_ShowGeneratingIndicator_When_IsReplenishingHasNotYetFlippedTrue`,
+which stubs `isReplenishing` to false (the genuinely-racy value) and asserts
+the indicator still renders. Re-verified against the real app (live Gemini
+call): the immediate response to a manual trigger on a fresh, never-triggered
+combo now reliably shows "Generating more AI names..." instead of
+intermittently omitting it.

@@ -75,6 +75,18 @@ public class NameBrowserController {
      * Fire-and-forget, per the "never block a request on a live LLM call" rule --
      * the re-rendered fragment's "generating" flag drives the client-side polling
      * that reveals the result once the async cycle finishes (see index.html).
+     *
+     * <p>The "generatingMore" model attribute is forced to true here rather than
+     * read from PoolReplenishmentService.isReplenishing(...) via populateBrowser --
+     * replenish(...) is @Async, so its in-flight-map update happens on the executor
+     * thread, not synchronously before this method continues. Reading isReplenishing
+     * immediately afterward races that update and can observe "false" even though a
+     * cycle was just requested, which would render this response with the polling
+     * indicator missing and no feedback that the click did anything. Since this
+     * endpoint only runs when the button that posted to it was visible (not already
+     * generating, not at cap -- see index.html), a cycle has genuinely just been
+     * requested, so forcing the flag true here is correct, not a guess. Subsequent
+     * polls hit GET /browse, which reads the real (by-then-accurate) flag.
      */
     @PostMapping("/browse/generate-more")
     public String generateMore(
@@ -85,6 +97,7 @@ public class NameBrowserController {
             HttpServletRequest request) {
         poolReplenishmentService.replenish(race, gender);
         populateBrowser(model, race, gender, source, request);
+        model.addAttribute("generatingMore", true);
         return "index :: browser";
     }
 
