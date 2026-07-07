@@ -1084,3 +1084,30 @@ concurrent-report race. Could not run `./mvnw test` locally -- same
 pre-existing JDK 26/Mockito inline-mock-maker gap documented above;
 confirmed via `./mvnw compile test-compile` that everything compiles
 cleanly.
+
+Caught in review of #38, fixed in this PR:
+
+- **An over-length `reason` would have surfaced as an unmapped 500, not a
+  400.** `name_reports.reason` is `VARCHAR(256)`; a longer value passed
+  through unvalidated would throw a DB-level "string data right truncation"
+  error on `save()`, which Spring's SQL exception translation maps to
+  `DataIntegrityViolationException` -- the same exception type
+  `NameReportService.saveNew`'s catch block interprets as a concurrent-report
+  race. Its re-query (`findBySessionIdAndNameId`) would then find nothing
+  (the insert never landed) and rethrow the *original* length-violation
+  exception unmapped. Fixed by validating length in
+  `NameReportController.normalizeReason` before calling the service, throwing
+  a clean `ResponseStatusException(BAD_REQUEST)` instead. Regression test:
+  `reportName_should_ReturnBadRequest_When_ReasonExceedsMaxLength`.
+- **Blank (`""` or whitespace-only) `reason` now normalizes to `null`**,
+  same method -- otherwise "no reason given" would have two different
+  representations in the same nullable column, which the not-yet-built
+  FLAGGED-review UI would eventually have to special-case. Regression test:
+  `reportName_should_TreatReasonAsNull_When_ReasonIsBlank`.
+
+One finding considered and deliberately not changed: `NameReportService.saveNew`
+and `FavoriteService.saveNew` (and `NameReportController`/`FavoriteController`'s
+`requireNameExists`/`sessionId` helpers) are near-identical. Not extracted into
+a shared helper -- only two occurrences exist, and this codebase's own
+convention favors "three similar lines... over a premature abstraction." Revisit
+if a third favorite/report-shaped feature package needs the same pattern.

@@ -1,5 +1,7 @@
 package com.dndnamegen.namegen.report;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -63,5 +65,32 @@ class NameReportControllerTest {
 
         mockMvc.perform(withSession(post("/reports").param("nameId", "1")))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void reportName_should_TreatReasonAsNull_When_ReasonIsBlank() throws Exception {
+        when(nameRepository.existsById(1L)).thenReturn(true);
+
+        mockMvc.perform(withSession(post("/reports").param("nameId", "1").param("reason", "   ")))
+                .andExpect(status().isCreated());
+
+        verify(nameReportService).reportName(SESSION_ID, 1L, null);
+    }
+
+    /**
+     * Regression test: an over-length reason must be rejected as a 400 here, not passed
+     * through to NameReportService.saveNew -- a DB-level "value too long" violation there would
+     * be misinterpreted by the DataIntegrityViolationException catch block as a concurrent-
+     * report race instead of an input validation failure.
+     */
+    @Test
+    void reportName_should_ReturnBadRequest_When_ReasonExceedsMaxLength() throws Exception {
+        when(nameRepository.existsById(1L)).thenReturn(true);
+        String tooLong = "x".repeat(257);
+
+        mockMvc.perform(withSession(post("/reports").param("nameId", "1").param("reason", tooLong)))
+                .andExpect(status().isBadRequest());
+
+        verify(nameReportService, never()).reportName(any(), any(), any());
     }
 }
