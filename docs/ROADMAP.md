@@ -86,8 +86,8 @@ Status legend: not started / in progress / done
 - [x] Testcontainers integration tests (`MigrationIT`, `NameInsertDaoIT`,
   `GenerationLogIT`)
 - [x] Native insert path exercised under concurrent writers (split out
-  of the line above -- the Testcontainers ITs exist but none of them
-  spin up concurrent writers yet)
+  of the line above; see `NameInsertDaoIT`'s
+  `insertGenerated_should_InsertExactlyOnce_When_ConcurrentWritersRaceOnTheSameName`)
 - [x] Mocked-`ChatModel` unit tests for service layer
   (`NameGenerationServiceTest` mocks `ChatClient`)
 - [x] Eval-style test against a live provider (separate test run, not
