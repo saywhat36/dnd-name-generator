@@ -54,9 +54,10 @@ public class SessionIdFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Only trusts a cookie value that matches the UUID format this filter mints --
-     * a blank or arbitrary client-supplied value would otherwise be accepted as-is
-     * and treated as a valid session identity.
+     * Only accepts a cookie value that is syntactically a UUID -- this rejects a
+     * blank or malformed value, but is not an authentication check: it is not
+     * signed or HMAC'd, so any client-fabricated syntactically-valid UUID is
+     * accepted and trusted as that request's session identity.
      */
     private String readSessionId(HttpServletRequest request) {
         Cookie cookie = WebUtils.getCookie(request, COOKIE_NAME);

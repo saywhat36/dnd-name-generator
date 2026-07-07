@@ -29,7 +29,7 @@
 ## Package layout (by feature, not by layer)
 
 ```
-com.yourname.namegen
+com.dndnamegen.namegen
 ├── NamegenApplication.java
 ├── name/
 │   ├── Name.java, Race.java, Gender.java, NameSource.java, NameStatus.java
