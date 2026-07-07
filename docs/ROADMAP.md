@@ -76,7 +76,7 @@ Status legend: not started / in progress / done
 - [ ] Lazy insert-on-favorite for refinement-mode results:
   `AI_REFINED` source value, `generation_log_id` set, `ON CONFLICT`
   handling links to an existing row on collision
-- [ ] `report/` package: report-name endpoint, writes to `name_reports`
+- [x] `report/` package: report-name endpoint, writes to `name_reports`
 - [ ] Manual review flow to flip `names.status` to FLAGGED
 
 ### Week 6 -- Observability + hardening
