@@ -80,8 +80,8 @@ Status legend: not started / in progress / done
 - [x] Manual review flow to flip `names.status` to FLAGGED
 
 ### Week 6 -- Observability + hardening
-- [ ] Actuator + Micrometer wired up
-- [ ] `SimpleLoggerAdvisor` on ChatClient
+- [x] Actuator + Micrometer wired up
+- [x] `SimpleLoggerAdvisor` on ChatClient
 - [ ] Per-use-case `ChatOptions` (temperature tuning for generation)
 - [x] Testcontainers integration tests (`MigrationIT`, `NameInsertDaoIT`,
   `GenerationLogIT`)

@@ -23,6 +23,23 @@ spring:
         # calls the ChatClient yet. Real key comes from application-gemini.yml.
         api-key: ${GEMINI_API_KEY:not-configured}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        # health for liveness checks; metrics exposes the Micrometer registry
+        # (including Spring AI's chat-client/token-usage timers/counters) for
+        # scraping or ad-hoc inspection. No prometheus/actuator-security setup
+        # yet -- revisit exposure if this ever needs to be scraped externally.
+        include: health,metrics
+
+logging:
+  level:
+    # SimpleLoggerAdvisor logs full prompt/response text at DEBUG -- name
+    # generation has no sensitive user data, so this is safe to leave on by
+    # default rather than gating it behind a profile.
+    org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor: DEBUG
+
 app:
   session-cookie:
     # Defaults to Secure (browsers drop Secure cookies received over plain HTTP).
