@@ -270,7 +270,7 @@
                 class="opt"
                 th:each="s : ${sources}"
                 th:id="'source-' + ${s.name()}"
-                th:text="${s.name() == 'AI_GENERATED' ? 'AI' : #strings.toLowerCase(s.name())}"
+                th:text="${s.name() == 'AI_GENERATED' ? 'AI' : (s.name() == 'CURATED' ? 'Handbook' : #strings.toLowerCase(s.name()))}"
                 th:classappend="${s == selectedSource} ? 'selected' : ''"
                 th:attr="aria-pressed=${s == selectedSource},hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${s})}"
                 hx-target="#browser"
