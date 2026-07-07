@@ -168,6 +168,43 @@ class PoolReplenishmentServiceTest {
     }
 
     @Test
+    void getPoolCapPerCombo_should_ReturnConfiguredCap() {
+        assertThat(service(20, 5, 200).getPoolCapPerCombo()).isEqualTo(20);
+    }
+
+    @Test
+    void isReplenishing_should_ReturnFalse_When_NoCycleInFlightForThatCombo() {
+        assertThat(service(20, 5, 200).isReplenishing(Race.ELF, Gender.FEMININE)).isFalse();
+    }
+
+    @Test
+    void isReplenishing_should_ReturnTrue_While_CycleInFlightForThatComboAndFalse_OnceItCompletes()
+            throws InterruptedException {
+        stubCounts(0, 3);
+        stubSavedLogWithId(1L);
+        CountDownLatch generationStarted = new CountDownLatch(1);
+        CountDownLatch releaseGeneration = new CountDownLatch(1);
+        when(nameGenerationService.generateValidatedNames(any(), any(), anyInt())).thenAnswer(invocation -> {
+            generationStarted.countDown();
+            releaseGeneration.await(5, TimeUnit.SECONDS);
+            return List.of();
+        });
+        when(nameInsertDao.insertGenerated(any(), any(), anyList(), anyString(), anyString(), anyString(), any()))
+                .thenReturn(0);
+        PoolReplenishmentService service = service(20, 5, 200);
+
+        Thread call = new Thread(() -> service.replenish(Race.ELF, Gender.FEMININE));
+        call.start();
+        assertThat(generationStarted.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(service.isReplenishing(Race.ELF, Gender.FEMININE)).isTrue();
+
+        releaseGeneration.countDown();
+        call.join(5000);
+
+        assertThat(service.isReplenishing(Race.ELF, Gender.FEMININE)).isFalse();
+    }
+
+    @Test
     void replenish_should_SkipSecondCall_When_FirstCallForSameComboIsStillInFlight() throws InterruptedException {
         stubCounts(0, 3);
         stubSavedLogWithId(1L);
