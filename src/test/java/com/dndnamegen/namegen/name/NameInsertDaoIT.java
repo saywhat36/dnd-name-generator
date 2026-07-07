@@ -2,9 +2,15 @@ package com.dndnamegen.namegen.name;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -116,5 +122,57 @@ class NameInsertDaoIT {
                 null);
 
         assertThat(insertedCount).isEqualTo(2);
+    }
+
+    /**
+     * The single-threaded tests above prove ON CONFLICT DO NOTHING skips a row that already
+     * exists at call time -- they don't prove anything about two writers racing to insert the
+     * *same* new name at the same instant, which is the actual scenario the unique constraint
+     * exists to protect against (docs/ARCHITECTURE.md: "two concurrent generations both
+     * inserting 'Aelric' for elf/feminine is a real race that application-level
+     * set-difference checks cannot prevent on their own"). This test drives real concurrent
+     * writers at the same candidate through separate pooled connections (a CountDownLatch
+     * holds every thread at the starting line so they submit as close to simultaneously as
+     * the JDBC connection pool allows), then asserts exactly one insert wins and no thread
+     * observes a poisoned/failed transaction from the conflict.
+     */
+    @Test
+    void insertGenerated_should_InsertExactlyOnce_When_ConcurrentWritersRaceOnTheSameName() throws Exception {
+        int threadCount = 8;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch allThreadsReady = new CountDownLatch(threadCount);
+        CountDownLatch startSignal = new CountDownLatch(1);
+        try {
+            List<Future<Integer>> futures = new ArrayList<>();
+            for (int i = 0; i < threadCount; i++) {
+                futures.add(executor.submit(() -> {
+                    allThreadsReady.countDown();
+                    startSignal.await();
+                    return nameInsertDao.insertGenerated(
+                            Race.ELF,
+                            Gender.FEMININE,
+                            List.of("Concurrentia"),
+                            "test-provider",
+                            "test-model",
+                            "v1",
+                            null);
+                }));
+            }
+            assertThat(allThreadsReady.await(5, TimeUnit.SECONDS)).isTrue();
+            startSignal.countDown();
+
+            int totalInserted = 0;
+            for (Future<Integer> future : futures) {
+                totalInserted += future.get(10, TimeUnit.SECONDS);
+            }
+
+            assertThat(totalInserted).isEqualTo(1);
+            Integer rowCount = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM names WHERE provider = 'test-provider' AND normalized_name = 'concurrentia'",
+                    Integer.class);
+            assertThat(rowCount).isEqualTo(1);
+        } finally {
+            executor.shutdown();
+        }
     }
 }

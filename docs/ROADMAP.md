@@ -85,7 +85,7 @@ Status legend: not started / in progress / done
 - [ ] Per-use-case `ChatOptions` (temperature tuning for generation)
 - [x] Testcontainers integration tests (`MigrationIT`, `NameInsertDaoIT`,
   `GenerationLogIT`)
-- [ ] Native insert path exercised under concurrent writers (split out
+- [x] Native insert path exercised under concurrent writers (split out
   of the line above -- the Testcontainers ITs exist but none of them
   spin up concurrent writers yet)
 - [x] Mocked-`ChatModel` unit tests for service layer
