@@ -1291,3 +1291,34 @@ one of N concurrent `INSERT`s on a unique index succeeds and the rest
 affect zero rows without erroring, so `totalInserted == 1` and one row in
 the table is the correct expected outcome. Revisit once a Testcontainers-
 capable Docker environment is available locally.
+
+## 2026-07-07: Actuator + Micrometer + `SimpleLoggerAdvisor`, first Week 6
+observability slice
+Added `spring-boot-starter-actuator` to `pom.xml` -- the only new dependency
+needed; Spring AI's built-in ChatClient observation instrumentation
+(token-usage/latency timers) activates automatically once Micrometer core is
+on the classpath via Actuator, with no separate Spring AI observability
+starter required. `management.endpoints.web.exposure.include: health,metrics`
+added to the base `application.yml` so both are reachable locally without a
+profile; no Prometheus registry or endpoint auth wired in yet, since nothing
+external scrapes this today -- revisit if/when the deployed instance
+(`docs/DEPLOYMENT.md`) needs to be monitored from outside.
+
+`ChatClientConfig.chatClient` now registers a `SimpleLoggerAdvisor` via
+`chatClientBuilder.defaultAdvisors(...)`, so every `ChatClient` call (both
+`NameGenerationService.testPrompt` and the structured-output
+`generateNameSuggestions` path) gets prompt/response logging for free without
+threading logging through each call site. `SimpleLoggerAdvisor` logs at
+`DEBUG`; set
+`logging.level.org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor: DEBUG`
+explicitly in `application.yml` rather than leaving it to whatever root level
+happens to be configured -- name-generation prompts contain no sensitive user
+data, so there's no reason to gate this behind a profile or a higher log
+level.
+
+No dedicated test added, matching the existing pattern for `ChatClientConfig`
+(plain `@Bean` wiring, no branching logic -- see the `AsyncConfig` decision
+above for the same reasoning). Verified with `./mvnw compile test-compile`;
+`./mvnw test` was not run for this slice since it touches no test-bearing
+logic and the pre-existing local JDK 26/Mockito and Testcontainers/Docker
+gaps (documented in earlier entries) remain unrelated to this change.
