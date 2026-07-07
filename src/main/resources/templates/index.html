@@ -55,10 +55,10 @@
 
         /* hero */
         .hero{
-            min-height:76vh;
+            min-height:38vh;
             align-content:space-between;
             display:grid;grid-template-columns:1fr auto;align-items:end;
-            padding-block:clamp(2rem,6vh,5rem) clamp(2.5rem,8vh,5rem);
+            padding-block:clamp(1.25rem,3vh,2.5rem) clamp(1.25rem,4vh,2.5rem);
         }
         .eyebrow{
             grid-column:1/-1;align-self:start;
@@ -69,11 +69,11 @@
         .hero h1 .ln{display:block;overflow:hidden}
         .hero h1 .ln>span{display:block;transform:translateY(110%);animation:rise 1s var(--ease) forwards}
         .hero h1 .ln:nth-child(2)>span{animation-delay:.12s}
-        .hero h1 .l1{font-size:clamp(4.2rem,17vw,13.5rem)}
+        .hero h1 .l1{font-size:clamp(2.4rem,9vw,6.5rem)}
         .hero h1 .l2{
             font-family:var(--serif);font-style:italic;font-weight:400;
             text-transform:none;letter-spacing:-.01em;
-            font-size:clamp(3.6rem,15vw,12rem);
+            font-size:clamp(2.1rem,8vw,5.8rem);
         }
         @keyframes rise{to{transform:translateY(0)}}
         .annot{
