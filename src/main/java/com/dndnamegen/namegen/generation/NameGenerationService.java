@@ -40,7 +40,7 @@ public class NameGenerationService {
     private final DeduplicationService deduplicationService;
     private final GenerationLogRepository generationLogRepository;
     private final int maxGenerationAttempts;
-    private final double generationTemperature;
+    private final ChatOptions generationChatOptions;
 
     public NameGenerationService(
             ChatClient chatClient,
@@ -58,7 +58,7 @@ public class NameGenerationService {
         this.deduplicationService = deduplicationService;
         this.generationLogRepository = generationLogRepository;
         this.maxGenerationAttempts = maxGenerationAttempts;
-        this.generationTemperature = generationTemperature;
+        this.generationChatOptions = ChatOptions.builder().temperature(generationTemperature).build();
     }
 
     public String testPrompt(String input) {
@@ -87,7 +87,7 @@ public class NameGenerationService {
     public List<NameSuggestion> generateNameSuggestions(String promptText) {
         return chatClient
                 .prompt(promptText)
-                .options(ChatOptions.builder().temperature(generationTemperature).build())
+                .options(generationChatOptions)
                 .call()
                 .entity(new ParameterizedTypeReference<List<NameSuggestion>>() {});
     }

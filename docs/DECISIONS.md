@@ -1332,12 +1332,11 @@ at all, so every request used whatever default the active provider applies.
 `NameGenerationService.generateNameSuggestions(String promptText)` -- the one
 method both the real generation flow (`generateNameSuggestions(Race, Gender,
 int)`) and `generateValidatedNames`'s retry loop funnel through -- now chains
-`.options(ChatOptions.builder().temperature(generationTemperature).build())`
-between `.prompt(...)` and `.call()`. New `app.generation.temperature` `@Value`
-(default `1.1`), following the existing `app.generation.max-attempts`
-precedent: no explicit `application.yml` entry added, since the inline default
-already covers it and both are single generation-tuning knobs of the same
-kind.
+`.options(generationChatOptions)` between `.prompt(...)` and `.call()`. New
+`app.generation.temperature` `@Value` (default `1.1`), following the existing
+`app.generation.max-attempts` precedent: no explicit `application.yml` entry
+added, since the inline default already covers it and both are single
+generation-tuning knobs of the same kind.
 
 **`testPrompt` deliberately left untouched.** It's the separate Week 1
 plain-text pipe-check method, not part of the real generation path this
@@ -1373,3 +1372,24 @@ behavior. Could not run `./mvnw test` locally -- same pre-existing JDK
 26/Mockito inline-mock-maker gap documented in prior entries (identical
 failure signature, reproduced here against `QualityGateService`); confirmed
 via `./mvnw compile test-compile` that everything compiles cleanly.
+
+Caught in review of #43, fixed in this PR: **`ChatOptions` was rebuilt on every
+`generateNameSuggestions(String)` call** even though it's derived entirely
+from `generationTemperature`, a value that never changes after construction.
+Moved the `ChatOptions.builder().temperature(...).build()` call into the
+constructor as a new `generationChatOptions` field (replacing the raw
+`generationTemperature` field), reusing the same immutable, stateless instance
+across every call instead of allocating a new one per request -- the same
+"build once, reuse" precedent `chatClient` itself already sets as a singleton
+bean.
+
+Two review agents (correctness-focused and cleanup-focused) also confirmed,
+rather than merely asserted: the portable `ChatOptions.temperature` value
+genuinely reaches the Gemini API call (traced through
+`GoogleGenAiChatModel.buildRequestPrompt`'s `ModelOptionsUtils.copyToTarget`/
+`merge` calls against `GoogleGenAiChatOptions`'s matching `temperature` field,
+not a silent no-op), and that keeping this on `NameGenerationService` rather
+than moving it onto `ChatClientConfig`'s shared `ChatClient.Builder` (as
+`SimpleLoggerAdvisor` was in the prior PR) is the correct call, not an
+inconsistency -- `defaultOptions` on the builder would apply to `testPrompt`
+too, contradicting this item's own "per-use-case, not global" framing.
