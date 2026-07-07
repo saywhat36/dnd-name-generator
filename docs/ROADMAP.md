@@ -92,10 +92,11 @@ Status legend: not started / in progress / done
   (`NameGenerationServiceTest` mocks `ChatClient`)
 - [x] Eval-style test against a live provider (separate test run, not
   part of default build) -- `NameGenerationServiceEvalIT`
-- [ ] `RateLimitFilter` scoped correctly: not applied to name-serving
+- [x] `RateLimitFilter` scoped correctly: not applied to name-serving
   (DB-only), reserved for endpoints with a synchronous LLM call
-  (none yet in Phase 1 -- this becomes active in Phase 3)
-- [ ] Per-session Bucket4j buckets backed by Caffeine with a TTL, not
+  (none yet in Phase 1 -- this becomes active in Phase 3) -- built as
+  unregistered scaffolding in Phase 1, wired to a real endpoint in Phase 3
+- [x] Per-session Bucket4j buckets backed by Caffeine with a TTL, not
   an unbounded map
 - [x] htmx + Thymeleaf frontend: race buttons, gender buttons, source
   toggle (as button groups, not dropdowns)
