@@ -164,7 +164,7 @@ class NameBrowserControllerTest {
                         .param("gender", "FEMININE")
                         .param("source", "AI_GENERATED")))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString("Generate 5 more AI names")));
+                .andExpect(content().string(containsString("Generate")));
     }
 
     @Test
@@ -173,7 +173,7 @@ class NameBrowserControllerTest {
 
         mockMvc.perform(withSession(get("/browse")))
                 .andExpect(status().isOk())
-                .andExpect(content().string(not(containsString("Generate 5 more AI names"))));
+                .andExpect(content().string(not(containsString("Generate"))));
     }
 
     @Test
@@ -189,7 +189,7 @@ class NameBrowserControllerTest {
                         .param("gender", "FEMININE")
                         .param("source", "AI_GENERATED")))
                 .andExpect(status().isOk())
-                .andExpect(content().string(not(containsString("Generate 5 more AI names"))));
+                .andExpect(content().string(not(containsString("Generate"))));
     }
 
     @Test
@@ -205,8 +205,8 @@ class NameBrowserControllerTest {
                         .param("gender", "FEMININE")
                         .param("source", "AI_GENERATED")))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString("Generating more AI names")))
-                .andExpect(content().string(not(containsString("Generate 5 more AI names"))));
+                .andExpect(content().string(containsString("Conjuring")))
+                .andExpect(content().string(not(containsString("Generate"))));
     }
 
     @Test
@@ -239,7 +239,7 @@ class NameBrowserControllerTest {
                         .param("gender", "FEMININE")
                         .param("source", "AI_GENERATED")))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString("Generating more AI names")))
-                .andExpect(content().string(not(containsString("Generate 5 more AI names"))));
+                .andExpect(content().string(containsString("Conjuring")))
+                .andExpect(content().string(not(containsString("Generate"))));
     }
 }

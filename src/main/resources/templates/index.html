@@ -2,107 +2,362 @@
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>D&amp;D Name Generator</title>
     <!-- htmx via CDN for this minimal browse-only slice -- see docs/DECISIONS.md
          for why a webjar dependency isn't warranted yet. -->
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
     <style>
-        .toggle-group { margin-bottom: 0.5rem; }
-        .toggle-group button { margin-right: 0.25rem; }
-        .toggle-group button.selected { font-weight: bold; text-decoration: underline; }
-        .name-row { margin-bottom: 0.25rem; }
-        .name-row button { margin-left: 0.5rem; }
+        :root{
+            --paper:#EFEDE6;
+            --ink:#141310;
+            --muted:#716C61;
+            --line:rgba(20,19,16,.16);
+            --sans:"Archivo",system-ui,sans-serif;
+            --serif:"Instrument Serif",Georgia,serif;
+            --ease:cubic-bezier(.76,0,.24,1);
+        }
+        *{margin:0;padding:0;box-sizing:border-box}
+        html{scroll-behavior:smooth}
+        body{
+            background:var(--paper);
+            color:var(--ink);
+            font-family:var(--sans);
+            font-size:16px;
+            line-height:1.4;
+            -webkit-font-smoothing:antialiased;
+        }
+        ::selection{background:var(--ink);color:var(--paper)}
+        button{appearance:none;background:none;border:none;font:inherit;color:inherit;cursor:pointer}
+        a{color:inherit;text-decoration:none}
+        :focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+
+        .wrap{padding-inline:clamp(1.25rem,4vw,4rem)}
+
+        /* doubled-text hover swap on static links */
+        .swap{position:relative;display:inline-block;overflow:hidden;vertical-align:bottom}
+        .swap>span{display:block;transition:transform .5s var(--ease)}
+        .swap>span+span{position:absolute;left:0;top:100%}
+        a:hover .swap>span,button:hover .swap>span{transform:translateY(-100%)}
+
+        /* nav */
+        .nav{
+            display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+            padding-block:1.1rem;
+            font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;
+        }
+        .nav .mark{font-size:1.05rem;letter-spacing:0;display:inline-block;transition:transform .6s var(--ease)}
+        .nav a:hover .mark{transform:rotate(180deg)}
+        .nav .right{justify-self:end}
+
+        /* hero */
+        .hero{
+            min-height:76vh;
+            align-content:space-between;
+            display:grid;grid-template-columns:1fr auto;align-items:end;
+            padding-block:clamp(2rem,6vh,5rem) clamp(2.5rem,8vh,5rem);
+        }
+        .eyebrow{
+            grid-column:1/-1;align-self:start;
+            font-size:.72rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);
+        }
+        .eyebrow .m{color:var(--ink)}
+        .hero h1{font-weight:500;text-transform:uppercase;letter-spacing:-.03em;line-height:.86}
+        .hero h1 .ln{display:block;overflow:hidden}
+        .hero h1 .ln>span{display:block;transform:translateY(110%);animation:rise 1s var(--ease) forwards}
+        .hero h1 .ln:nth-child(2)>span{animation-delay:.12s}
+        .hero h1 .l1{font-size:clamp(4.2rem,17vw,13.5rem)}
+        .hero h1 .l2{
+            font-family:var(--serif);font-style:italic;font-weight:400;
+            text-transform:none;letter-spacing:-.01em;
+            font-size:clamp(3.6rem,15vw,12rem);
+        }
+        @keyframes rise{to{transform:translateY(0)}}
+        .annot{
+            text-align:right;font-size:.85rem;line-height:1.7;color:var(--muted);
+            padding-bottom:.8rem;
+        }
+        .annot .m{color:var(--ink)}
+        .annot em{font-family:var(--serif);font-style:italic;color:var(--ink);font-size:1.05em}
+
+        /* pickers */
+        .picker-row{
+            display:grid;grid-template-columns:9.5rem 1fr;align-items:baseline;gap:1rem;
+            border-top:1px solid var(--line);
+            padding-block:1.15rem;
+        }
+        .picker-row .lbl{
+            font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
+        }
+        .opts{display:flex;flex-wrap:wrap;column-gap:1.9rem;row-gap:.5rem}
+        .opt{
+            font-size:clamp(1rem,1.5vw,1.2rem);
+            text-transform:capitalize;
+            background-image:linear-gradient(var(--ink),var(--ink));
+            background-repeat:no-repeat;background-position:left 100%;background-size:0% 1px;
+            transition:background-size .4s var(--ease);
+            padding-bottom:2px;
+        }
+        .opt:hover{background-size:100% 1px}
+        .opt.selected{
+            font-family:var(--serif);font-style:italic;
+            font-size:clamp(1.1rem,1.7vw,1.35rem);
+            background-size:0% 1px;
+        }
+        .opt.selected::before{
+            content:"※ ";font-family:var(--sans);font-style:normal;font-size:.7em;
+            vertical-align:.12em;
+        }
+
+        /* featured names */
+        .featured{margin-top:clamp(3rem,9vh,6rem)}
+        .featured h2{font-weight:500;line-height:.9;letter-spacing:-.02em}
+        .featured h2 .a{display:block;text-transform:uppercase;font-size:clamp(2.8rem,8vw,6.2rem)}
+        .featured h2 .b{
+            display:block;font-family:var(--serif);font-style:italic;font-weight:400;
+            font-size:clamp(2.5rem,7vw,5.6rem);
+        }
+        .featured h2 .count{
+            font-family:var(--sans);font-style:normal;font-size:.22em;letter-spacing:.12em;
+            color:var(--muted);vertical-align:super;margin-left:.6em;
+        }
+        .names{list-style:none;margin-top:clamp(1.8rem,4vh,3rem)}
+        .row{
+            display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;
+            align-items:baseline;column-gap:clamp(1rem,3vw,2.5rem);
+            border-top:1px solid var(--line);
+            padding-block:1.2rem;
+        }
+        .names li:last-child{border-bottom:1px solid var(--line)}
+        .nm{
+            font-size:clamp(1.5rem,3.4vw,2.4rem);font-weight:500;letter-spacing:-.01em;
+            position:relative;transition:transform .35s var(--ease);
+        }
+        .nm::before{
+            content:"※";position:absolute;left:-1.5ch;top:.32em;font-size:.5em;
+            opacity:0;transition:opacity .35s var(--ease);
+        }
+        .row:hover .nm{transform:translateX(.55ch)}
+        .row:hover .nm::before{opacity:.55}
+        .tag{font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+        .act{
+            font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;
+            border-bottom:1px solid var(--ink);padding-bottom:2px;
+            transition:opacity .3s;
+        }
+        .act:hover{opacity:.55}
+        .act:disabled{border-bottom-color:transparent;color:var(--muted);cursor:default;opacity:1}
+        .empty{border-top:1px solid var(--line);padding-block:2rem;color:var(--muted);font-size:1.05rem}
+        .empty em{font-family:var(--serif);font-style:italic;color:var(--ink)}
+
+        /* generate-more CTA / polling indicator */
+        .more{margin-top:clamp(2rem,5vh,3.5rem)}
+        .cta{
+            font-size:clamp(1.5rem,3.6vw,2.5rem);font-weight:500;letter-spacing:-.01em;
+            border-bottom:1px solid var(--ink);padding-bottom:.15em;
+        }
+        .cta em{font-family:var(--serif);font-style:italic;font-weight:400}
+        .cta .mark{display:inline-block;margin-left:.35em;font-size:.75em;transition:transform .5s var(--ease)}
+        .cta:hover .mark{transform:rotate(90deg)}
+        .conjuring{
+            font-size:clamp(1.3rem,3vw,2rem);color:var(--muted);
+            display:flex;align-items:center;gap:.6em;
+        }
+        .conjuring em{font-family:var(--serif);font-style:italic;color:var(--ink)}
+        .spin{display:inline-block;animation:spin 1.8s linear infinite;color:var(--ink)}
+        @keyframes spin{to{transform:rotate(360deg)}}
+
+        /* footer */
+        footer{margin-top:clamp(4rem,12vh,8rem);border-top:1px solid var(--line)}
+        .outro{padding-block:clamp(2.5rem,8vh,5.5rem)}
+        .outro h2{font-weight:500;line-height:.88;letter-spacing:-.02em}
+        .outro h2 .a{display:block;text-transform:uppercase;font-size:clamp(3.4rem,12vw,9rem)}
+        .outro h2 .b{
+            display:block;font-family:var(--serif);font-style:italic;font-weight:400;
+            font-size:clamp(3rem,11vw,8.2rem);
+        }
+        .outro p{margin-top:1.4rem;color:var(--muted);font-size:.95rem}
+        .baseline{
+            display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+            padding-block:1.1rem;border-top:1px solid var(--line);
+            font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;
+        }
+        .baseline .right{justify-self:end}
+
+        /* responsive */
+        @media (max-width:680px){
+            .hero{grid-template-columns:1fr;min-height:66vh}
+            .annot{text-align:left;margin-top:1.6rem;padding-bottom:0}
+            .picker-row{grid-template-columns:1fr;gap:.55rem;padding-block:1rem}
+            .row{grid-template-columns:1fr auto auto;row-gap:.55rem}
+            .nm{grid-column:1/-1}
+            .row:hover .nm{transform:none}
+        }
+        @media (prefers-reduced-motion:reduce){
+            *,*::before,*::after{animation:none!important;transition:none!important}
+            .hero h1 .ln>span{transform:none}
+        }
     </style>
 </head>
 <body>
-<h1>D&amp;D Name Generator</h1>
+
+<header class="nav wrap">
+    <span>D&amp;D</span>
+    <a href="#top" aria-label="Back to start"><span class="mark">※</span></a>
+    <a class="right" href="#works">
+        <span class="swap"><span>Names</span><span aria-hidden="true">Names</span></span>&nbsp;&darr;
+    </a>
+</header>
+
+<section class="hero wrap" id="top">
+    <p class="eyebrow">Fantasy name generator <span class="m">※</span> curated lore &amp; conjured by AI</p>
+    <h1>
+        <span class="ln l1"><span>Name</span></span>
+        <span class="ln l2"><span>generator</span></span>
+    </h1>
+    <div class="annot">
+        Specialize in<br />
+        Elves <span class="m">※</span> Dwarves<br />
+        Orcs <em>&amp; more</em>
+    </div>
+</section>
+
+<main class="wrap" id="works">
 
 <!-- Race/gender/source picker, each rendered as a button group -- clicking a button
      both selects it (highlighted via the "selected" class, computed server-side from
      selectedRace/selectedGender/selectedSource) and immediately triggers /browse with
      that selection, swapping this whole fragment so the newly-clicked button re-renders
-     highlighted. No favorite/report actions or pool-low notice yet -- those depend on
-     Week 5 (favorites/reports) and Week 4 (provider switching) slices that don't exist
-     yet. See docs/DECISIONS.md for the scope of this slice. -->
+     highlighted. Enum names are lowercased/hyphenated server-side and re-capitalized
+     with CSS text-transform, so HALF_ORC renders as "Half-Orc" without a Java change.
+     See docs/DECISIONS.md for the scope of this slice. -->
 <div id="browser" th:fragment="browser">
-    <div class="toggle-group" role="group" aria-label="Race">
-        <button
-            type="button"
-            th:each="r : ${races}"
-            th:text="${r}"
-            th:classappend="${r == selectedRace} ? 'selected' : ''"
-            th:attr="hx-get=@{/browse(race=${r},gender=${selectedGender},source=${selectedSource})}"
-            hx-target="#browser"
-            hx-swap="outerHTML"></button>
-    </div>
-
-    <div class="toggle-group" role="group" aria-label="Gender">
-        <button
-            type="button"
-            th:each="g : ${genders}"
-            th:text="${g}"
-            th:classappend="${g == selectedGender} ? 'selected' : ''"
-            th:attr="hx-get=@{/browse(race=${selectedRace},gender=${g},source=${selectedSource})}"
-            hx-target="#browser"
-            hx-swap="outerHTML"></button>
-    </div>
-
-    <div class="toggle-group" role="group" aria-label="Source">
-        <button
-            type="button"
-            th:each="s : ${sources}"
-            th:text="${s}"
-            th:classappend="${s == selectedSource} ? 'selected' : ''"
-            th:attr="hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${s})}"
-            hx-target="#browser"
-            hx-swap="outerHTML"></button>
-    </div>
-
-    <!-- Manual AI pool growth: the automatic below-threshold replenishment in
-         NameService.getNames only bootstraps a combo's AI pool up to
-         app.pool-replenishment.replenish-threshold, so once it reaches that resting
-         point nothing ever asks for more on its own. This button lets the user ask
-         for another batch, up to app.pool-replenishment.cap-per-combo, subject to the
-         same stampede guard/pool-cap/daily-budget protections PoolReplenishmentService
-         already enforces regardless of provider. Hidden once at cap or already
-         generating, so it never renders as a button that would visibly do nothing. -->
-    <div
-        class="toggle-group"
-        th:if="${selectedSource != T(com.dndnamegen.namegen.name.NameSourceFilter).CURATED and !generatingMore and aiPoolSize < aiPoolCap}">
-        <button
-            type="button"
-            th:attr="hx-post=@{/browse/generate-more(race=${selectedRace},gender=${selectedGender},source=${selectedSource})}"
-            hx-target="#browser"
-            hx-swap="outerHTML">Generate 5 more AI names</button>
-    </div>
-    <div
-        id="generating-indicator"
-        th:if="${generatingMore}"
-        th:attr="hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${selectedSource})}"
-        hx-trigger="every 2s"
-        hx-target="#browser"
-        hx-swap="outerHTML">Generating more AI names&hellip;</div>
-
-    <ul>
-        <li class="name-row" th:each="n : ${names}">
-            <span th:text="${n.displayName}"></span>
+    <div class="picker-row" role="group" aria-label="Race">
+        <span class="lbl">Race</span>
+        <div class="opts">
             <button
                 type="button"
-                th:text="${favoritedNameIds.contains(n.id)} ? 'Favorited &#10003;' : 'Favorite'"
-                th:disabled="${favoritedNameIds.contains(n.id)}"
-                th:attr="hx-post=@{/favorites(nameId=${n.id})}"
-                hx-swap="none"
-                hx-on::after-request="if(event.detail.successful){this.disabled=true;this.textContent='Favorited ✓'}"></button>
+                class="opt"
+                th:each="r : ${races}"
+                th:text="${#strings.toLowerCase(#strings.replace(r.name(),'_','-'))}"
+                th:classappend="${r == selectedRace} ? 'selected' : ''"
+                th:attr="hx-get=@{/browse(race=${r},gender=${selectedGender},source=${selectedSource})}"
+                hx-target="#browser"
+                hx-swap="outerHTML"></button>
+        </div>
+    </div>
+
+    <div class="picker-row" role="group" aria-label="Gender">
+        <span class="lbl">Gender</span>
+        <div class="opts">
             <button
                 type="button"
-                th:text="${reportedNameIds.contains(n.id)} ? 'Reported &#10003;' : 'Report'"
-                th:disabled="${reportedNameIds.contains(n.id)}"
-                th:attr="hx-post=@{/reports(nameId=${n.id})}"
-                hx-swap="none"
-                hx-on::after-request="if(event.detail.successful){this.disabled=true;this.textContent='Reported ✓'}"></button>
-        </li>
-        <li th:if="${names.isEmpty()}">No names yet for this race/gender/source.</li>
-    </ul>
+                class="opt"
+                th:each="g : ${genders}"
+                th:text="${#strings.toLowerCase(g.name())}"
+                th:classappend="${g == selectedGender} ? 'selected' : ''"
+                th:attr="hx-get=@{/browse(race=${selectedRace},gender=${g},source=${selectedSource})}"
+                hx-target="#browser"
+                hx-swap="outerHTML"></button>
+        </div>
+    </div>
+
+    <div class="picker-row" role="group" aria-label="Source">
+        <span class="lbl">Source</span>
+        <div class="opts">
+            <button
+                type="button"
+                class="opt"
+                th:each="s : ${sources}"
+                th:text="${s.name() == 'AI_GENERATED' ? 'AI' : #strings.toLowerCase(s.name())}"
+                th:classappend="${s == selectedSource} ? 'selected' : ''"
+                th:attr="hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${s})}"
+                hx-target="#browser"
+                hx-swap="outerHTML"></button>
+        </div>
+    </div>
+
+    <section class="featured">
+        <h2>
+            <span class="a">Featured</span>
+            <span class="b">names <span class="count" th:text="'( ' + ${#numbers.formatInteger(names.size(), 2)} + ' )'">( 00 )</span></span>
+        </h2>
+
+        <ul class="names">
+            <li class="row" th:each="n : ${names}">
+                <span class="nm" th:text="${n.displayName}"></span>
+                <span class="tag" th:text="${n.source.name() == 'CURATED'} ? 'Curated' : 'AI'"></span>
+                <button
+                    type="button"
+                    class="act"
+                    th:text="${favoritedNameIds.contains(n.id)} ? 'Favorited ※' : 'Favorite'"
+                    th:disabled="${favoritedNameIds.contains(n.id)}"
+                    th:attr="hx-post=@{/favorites(nameId=${n.id})}"
+                    hx-swap="none"
+                    hx-on::after-request="if(event.detail.successful){this.disabled=true;this.textContent='Favorited ※'}"></button>
+                <button
+                    type="button"
+                    class="act"
+                    th:text="${reportedNameIds.contains(n.id)} ? 'Reported ※' : 'Report'"
+                    th:disabled="${reportedNameIds.contains(n.id)}"
+                    th:attr="hx-post=@{/reports(nameId=${n.id})}"
+                    hx-swap="none"
+                    hx-on::after-request="if(event.detail.successful){this.disabled=true;this.textContent='Reported ※'}"></button>
+            </li>
+            <li class="empty" th:if="${names.isEmpty()}">
+                Nothing here yet <em>&mdash; try another race, gender, or source.</em>
+            </li>
+        </ul>
+
+        <!-- Manual AI pool growth: the automatic below-threshold replenishment in
+             NameService.getNames only bootstraps a combo's AI pool up to
+             app.pool-replenishment.replenish-threshold, so once it reaches that resting
+             point nothing ever asks for more on its own. This button lets the user ask
+             for another batch, up to app.pool-replenishment.cap-per-combo, subject to the
+             same stampede guard/pool-cap/daily-budget protections PoolReplenishmentService
+             already enforces regardless of provider. Hidden once at cap or already
+             generating, so it never renders as a button that would visibly do nothing. -->
+        <div
+            class="more"
+            th:if="${selectedSource != T(com.dndnamegen.namegen.name.NameSourceFilter).CURATED and !generatingMore and aiPoolSize < aiPoolCap}">
+            <button
+                type="button"
+                class="cta"
+                th:attr="hx-post=@{/browse/generate-more(race=${selectedRace},gender=${selectedGender},source=${selectedSource})}"
+                hx-target="#browser"
+                hx-swap="outerHTML">Generate <em>five more</em><span class="mark">※</span></button>
+        </div>
+        <div
+            id="generating-indicator"
+            class="more conjuring"
+            th:if="${generatingMore}"
+            th:attr="hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${selectedSource})}"
+            hx-trigger="every 2s"
+            hx-target="#browser"
+            hx-swap="outerHTML"><span class="spin">※</span> Conjuring <em>five more</em>&hellip;</div>
+    </section>
 </div>
+</main>
+
+<footer>
+    <div class="outro wrap">
+        <h2>
+            <span class="a">Let's</span>
+            <span class="b">roll</span>
+        </h2>
+        <p>May your name echo through the ages.</p>
+    </div>
+    <div class="baseline wrap">
+        <span>&copy;2026</span>
+        <span>※</span>
+        <a class="right" href="#top">
+            <span class="swap"><span>Back to top</span><span aria-hidden="true">Back to top</span></span>&nbsp;&uarr;
+        </a>
+    </div>
+</footer>
+
 </body>
 </html>
