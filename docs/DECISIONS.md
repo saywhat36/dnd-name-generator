@@ -1322,3 +1322,54 @@ above for the same reasoning). Verified with `./mvnw compile test-compile`;
 `./mvnw test` was not run for this slice since it touches no test-bearing
 logic and the pre-existing local JDK 26/Mockito and Testcontainers/Docker
 gaps (documented in earlier entries) remain unrelated to this change.
+
+## 2026-07-07: Per-use-case `ChatOptions` -- temperature tuning for the real
+generation path only
+Second Week 6 observability/hardening slice. `docs/ARCHITECTURE.md`'s
+replenishment-flow step 5 already called for "generation-specific `ChatOptions`
+(higher temperature for variety)"; until now no call site set any `ChatOptions`
+at all, so every request used whatever default the active provider applies.
+`NameGenerationService.generateNameSuggestions(String promptText)` -- the one
+method both the real generation flow (`generateNameSuggestions(Race, Gender,
+int)`) and `generateValidatedNames`'s retry loop funnel through -- now chains
+`.options(ChatOptions.builder().temperature(generationTemperature).build())`
+between `.prompt(...)` and `.call()`. New `app.generation.temperature` `@Value`
+(default `1.1`), following the existing `app.generation.max-attempts`
+precedent: no explicit `application.yml` entry added, since the inline default
+already covers it and both are single generation-tuning knobs of the same
+kind.
+
+**`testPrompt` deliberately left untouched.** It's the separate Week 1
+plain-text pipe-check method, not part of the real generation path this
+roadmap item is about -- setting a variety-tuned temperature there would be
+scope creep onto an unrelated use case, and "per-use-case" is the point of
+this item, not "global."
+
+**Portable `org.springframework.ai.chat.prompt.ChatOptions`, not a
+Gemini-specific options class.** `docs/ARCHITECTURE.md`'s provider-switching
+section already warns that "structured output support and option names are
+not identical across providers" -- using Spring AI's portable `ChatOptions`
+builder here (rather than `GoogleGenAiChatOptions`) means this temperature
+setting keeps working unchanged once Week 4 wires in a second provider,
+instead of needing its own per-provider variant like `app.generation.model`
+already does.
+
+**Tests**: `NameGenerationServiceTest`'s constructor now takes the new
+`generationTemperature` parameter (a `TEMPERATURE` constant matching the
+`app.generation.temperature` default, passed explicitly rather than relying on
+Spring to inject the `@Value` default, consistent with how `maxGenerationAttempts`
+is already passed as a literal `3`). Every mocked `ChatClient.ChatClientRequestSpec`
+in this test class is now built via a new `mockRequestSpec()` helper using
+`Mockito.RETURNS_SELF`, since the added `.options(...)` call in the fluent
+chain would otherwise return `null` from an unstubbed mock and break every
+existing `.call()` chain in the file -- `RETURNS_SELF` lets any method
+returning a `ChatClientRequestSpec`-compatible type return the mock itself
+without stubbing each one individually. Added one new assertion (in the
+existing `generateNameSuggestions_should_ReturnParsedSuggestions_When_StructuredOutputSucceeds`
+test) capturing the `ChatOptions` argument and asserting its temperature
+matches `TEMPERATURE`, rather than adding a whole new test method, since this
+is a small addition to an already-passing call path rather than new branching
+behavior. Could not run `./mvnw test` locally -- same pre-existing JDK
+26/Mockito inline-mock-maker gap documented in prior entries (identical
+failure signature, reproduced here against `QualityGateService`); confirmed
+via `./mvnw compile test-compile` that everything compiles cleanly.
