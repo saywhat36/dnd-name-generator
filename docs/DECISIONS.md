@@ -1204,3 +1204,34 @@ both plain-mock, matching the existing convention. Could not run `./mvnw
 test` locally -- same pre-existing JDK 26/Mockito inline-mock-maker gap
 documented above; confirmed via `./mvnw compile test-compile` that
 everything compiles cleanly.
+
+Caught in review of #39, fixed in this PR:
+
+- **`NameRepository.updateStatus` had no `clearAutomatically = true`.** A
+  bulk JPQL `@Modifying` update bypasses the Hibernate persistence context
+  entirely, so it doesn't invalidate any `Name` entity already loaded in
+  the same transaction. No caller does that today -- `flagName`'s
+  `@Transactional` boundary contains only the one update call -- so this
+  had no live trigger, but it's a landmine for the next caller that adds
+  a `findById` before the update in the same transaction (e.g. to return
+  a richer 404 message). Added `clearAutomatically = true` defensively
+  rather than waiting for a caller to hit it.
+
+One finding filed as a follow-up issue rather than fixed here:
+[#40](https://github.com/saywhat36/dnd-name-generator/issues/40)
+(flagging a name doesn't free its `(normalized_name, race, gender)`
+unique-constraint slot, so `DeduplicationService`'s existing-row lookup
+and `NameInsertDao`'s `ON CONFLICT DO NOTHING` both silently block that
+exact name from ever being regenerated -- needs a real design decision
+about whether flagged/rejected names should keep occupying their slot,
+bigger than this PR's scope).
+
+One finding considered and deliberately not changed: putting `flagName`
+directly on `NameController`/`NameService` rather than a new `review/`
+package (matching `favorite/`/`report/`'s shape). This was already an
+explicit, reasoned choice recorded above ("Scope" section) -- a single
+field flip on the existing `Name` aggregate, no new entity -- not an
+oversight. Revisit if enough review-specific logic accumulates that
+`NameController`/`NameService` start feeling like a grab-bag, per the
+same "don't design for hypothetical future requirements" reasoning
+already applied to the package-placement decision.
