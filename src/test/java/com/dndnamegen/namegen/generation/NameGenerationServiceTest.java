@@ -21,7 +21,9 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.ClassPathResource;
@@ -29,6 +31,7 @@ import org.springframework.core.io.ClassPathResource;
 class NameGenerationServiceTest {
 
     private static final String TEMPLATE = "Generate {count} {race} names ({gender}). Examples: {examples}";
+    private static final double TEMPERATURE = 1.1;
 
     private final ChatClient chatClient = mock(ChatClient.class);
     private final NameRepository nameRepository = mock(NameRepository.class);
@@ -43,11 +46,17 @@ class NameGenerationServiceTest {
             qualityGateService,
             deduplicationService,
             generationLogRepository,
-            3);
+            3,
+            TEMPERATURE);
+
+    /** requestSpec.options(...) needs to return the same mock so the .call() chain still works. */
+    private static ChatClient.ChatClientRequestSpec mockRequestSpec() {
+        return mock(ChatClient.ChatClientRequestSpec.class, Mockito.RETURNS_SELF);
+    }
 
     @Test
     void generateNameSuggestions_should_ReturnParsedSuggestions_When_StructuredOutputSucceeds() {
-        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.ChatClientRequestSpec requestSpec = mockRequestSpec();
         ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
         List<NameSuggestion> expected = List.of(new NameSuggestion("Aelric"), new NameSuggestion("Sylvaine"));
 
@@ -64,6 +73,10 @@ class NameGenerationServiceTest {
         ParameterizedType capturedType = (ParameterizedType) typeCaptor.getValue().getType();
         assertThat(capturedType.getRawType()).isEqualTo(List.class);
         assertThat(capturedType.getActualTypeArguments()).containsExactly(NameSuggestion.class);
+
+        ArgumentCaptor<ChatOptions> optionsCaptor = ArgumentCaptor.forClass(ChatOptions.class);
+        verify(requestSpec).options(optionsCaptor.capture());
+        assertThat(optionsCaptor.getValue().getTemperature()).isEqualTo(TEMPERATURE);
     }
 
     @Test
@@ -76,7 +89,7 @@ class NameGenerationServiceTest {
                         Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, NameSource.CURATED))
                 .thenReturn(List.of(curatedOne, curatedTwo));
 
-        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.ChatClientRequestSpec requestSpec = mockRequestSpec();
         ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
         String expectedPrompt = "Generate 5 ELF names (FEMININE). Examples: Aelric, Sylvaine";
         when(chatClient.prompt(expectedPrompt)).thenReturn(requestSpec);
@@ -114,7 +127,7 @@ class NameGenerationServiceTest {
     private void stubGenerationAttempts(List<List<NameSuggestion>> attemptResults) {
         when(nameRepository.findByRaceAndGenderAndStatusAndSource(any(), any(), any(), any()))
                 .thenReturn(List.of());
-        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.ChatClientRequestSpec requestSpec = mockRequestSpec();
         ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
         when(chatClient.prompt(anyString())).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(responseSpec);
@@ -126,7 +139,7 @@ class NameGenerationServiceTest {
 
     @Test
     void generateValidatedNames_should_RetryGeneration_When_FirstAttemptFailsToParse() {
-        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.ChatClientRequestSpec requestSpec = mockRequestSpec();
         ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
         when(nameRepository.findByRaceAndGenderAndStatusAndSource(any(), any(), any(), any()))
                 .thenReturn(List.of());

@@ -82,7 +82,7 @@ Status legend: not started / in progress / done
 ### Week 6 -- Observability + hardening
 - [x] Actuator + Micrometer wired up
 - [x] `SimpleLoggerAdvisor` on ChatClient
-- [ ] Per-use-case `ChatOptions` (temperature tuning for generation)
+- [x] Per-use-case `ChatOptions` (temperature tuning for generation)
 - [x] Testcontainers integration tests (`MigrationIT`, `NameInsertDaoIT`,
   `GenerationLogIT`)
 - [x] Native insert path exercised under concurrent writers (split out

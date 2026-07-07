@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -39,6 +40,7 @@ public class NameGenerationService {
     private final DeduplicationService deduplicationService;
     private final GenerationLogRepository generationLogRepository;
     private final int maxGenerationAttempts;
+    private final ChatOptions generationChatOptions;
 
     public NameGenerationService(
             ChatClient chatClient,
@@ -47,7 +49,8 @@ public class NameGenerationService {
             QualityGateService qualityGateService,
             DeduplicationService deduplicationService,
             GenerationLogRepository generationLogRepository,
-            @Value("${app.generation.max-attempts:3}") int maxGenerationAttempts) {
+            @Value("${app.generation.max-attempts:3}") int maxGenerationAttempts,
+            @Value("${app.generation.temperature:1.1}") double generationTemperature) {
         this.chatClient = chatClient;
         this.nameGenerationPromptTemplate = nameGenerationPromptTemplate;
         this.nameRepository = nameRepository;
@@ -55,6 +58,7 @@ public class NameGenerationService {
         this.deduplicationService = deduplicationService;
         this.generationLogRepository = generationLogRepository;
         this.maxGenerationAttempts = maxGenerationAttempts;
+        this.generationChatOptions = ChatOptions.builder().temperature(generationTemperature).build();
     }
 
     public String testPrompt(String input) {
@@ -83,6 +87,7 @@ public class NameGenerationService {
     public List<NameSuggestion> generateNameSuggestions(String promptText) {
         return chatClient
                 .prompt(promptText)
+                .options(generationChatOptions)
                 .call()
                 .entity(new ParameterizedTypeReference<List<NameSuggestion>>() {});
     }
