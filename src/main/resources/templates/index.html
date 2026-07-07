@@ -124,14 +124,17 @@
             font-family:var(--sans);font-style:normal;font-size:.22em;letter-spacing:.12em;
             color:var(--muted);vertical-align:super;margin-left:.6em;
         }
-        .names{list-style:none;margin-top:clamp(1.8rem,4vh,3rem)}
+        .names{
+            list-style:none;margin-top:clamp(1.8rem,4vh,3rem);
+            columns:3;column-gap:clamp(1.5rem,4vw,3rem);
+        }
         .row{
             display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;
-            align-items:baseline;column-gap:clamp(1rem,3vw,2.5rem);
-            border-top:1px solid var(--line);
+            align-items:baseline;column-gap:clamp(.75rem,2vw,1.5rem);
+            border-bottom:1px solid var(--line);
             padding-block:.75rem;
+            break-inside:avoid-column;
         }
-        .names li:last-child{border-bottom:1px solid var(--line)}
         .nm{
             font-size:clamp(1.15rem,2.3vw,1.6rem);font-weight:500;letter-spacing:-.01em;
             position:relative;transition:transform .35s var(--ease);
@@ -142,14 +145,17 @@
         }
         .row:hover .nm{transform:translateX(.55ch)}
         .row:hover .nm::before{opacity:.55}
-        .tag{font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+        .tag-icon{display:inline-flex;color:var(--muted)}
+        .ic{width:1.15em;height:1.15em;vertical-align:-.15em}
         .act{
             font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;
-            border-bottom:1px solid var(--ink);padding-bottom:2px;
             transition:opacity .3s;
         }
         .act:hover{opacity:.55}
-        .act:disabled{border-bottom-color:transparent;color:var(--muted);cursor:default;opacity:1}
+        .act:disabled{color:var(--muted);cursor:default;opacity:1}
+        .act.icon-btn{display:inline-flex;padding:.1rem}
+        .act.icon-btn.is-active{color:var(--ink)}
+        .act.icon-btn.is-active .ic-heart{fill:currentColor}
         .empty{border-top:1px solid var(--line);padding-block:2rem;color:var(--muted);font-size:1.05rem}
         .empty em{font-family:var(--serif);font-style:italic;color:var(--ink)}
 
@@ -188,10 +194,14 @@
         .baseline .right{justify-self:end}
 
         /* responsive */
+        @media (max-width:980px){
+            .names{columns:2}
+        }
         @media (max-width:680px){
             .hero{grid-template-columns:1fr;min-height:66vh}
             .annot{text-align:left;margin-top:1.6rem;padding-bottom:0}
             .picker-row{grid-template-columns:1fr;gap:.55rem;padding-block:1rem}
+            .names{columns:1}
             .row{grid-template-columns:1fr auto auto;row-gap:.55rem}
             .nm{grid-column:1/-1}
             .row:hover .nm{transform:none}
@@ -287,23 +297,49 @@
         <ul class="names" aria-live="polite" aria-atomic="false">
             <li class="row" th:each="n : ${names}">
                 <span class="nm" th:text="${n.displayName}"></span>
-                <span class="tag" th:text="${n.source.name() == 'CURATED'} ? 'Handbook' : 'AI'"></span>
+                <span class="tag-icon" th:attr="title=${n.source.name() == 'CURATED'} ? 'Handbook' : 'AI'">
+                    <svg th:if="${n.source.name() == 'CURATED'}" class="ic ic-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                    </svg>
+                    <svg th:unless="${n.source.name() == 'CURATED'}" class="ic ic-robot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="4" y="8" width="16" height="12" rx="2"/>
+                        <circle cx="9" cy="14" r="1.3" fill="currentColor" stroke="none"/>
+                        <circle cx="15" cy="14" r="1.3" fill="currentColor" stroke="none"/>
+                        <line x1="12" y1="8" x2="12" y2="4"/>
+                        <circle cx="12" cy="3" r="1" fill="currentColor" stroke="none"/>
+                        <line x1="4" y1="13" x2="2" y2="13"/>
+                        <line x1="20" y1="13" x2="22" y2="13"/>
+                    </svg>
+                </span>
                 <button
                     type="button"
-                    class="act"
-                    th:text="${favoritedNameIds.contains(n.id)} ? 'Favorited ※' : 'Favorite'"
+                    class="act icon-btn"
+                    th:classappend="${favoritedNameIds.contains(n.id)} ? 'is-active' : ''"
                     th:disabled="${favoritedNameIds.contains(n.id)}"
+                    title="Favourite"
                     th:attr="hx-post=@{/favorites(nameId=${n.id})}"
                     hx-swap="none"
-                    hx-on::after-request="if(event.detail.successful){this.disabled=true;this.textContent='Favorited ※'}"></button>
+                    hx-on::after-request="if(event.detail.successful){this.disabled=true;this.classList.add('is-active')}">
+                    <svg class="ic ic-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21.2l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/>
+                    </svg>
+                </button>
                 <button
                     type="button"
-                    class="act"
-                    th:text="${reportedNameIds.contains(n.id)} ? 'Reported ※' : 'Report'"
+                    class="act icon-btn"
+                    th:classappend="${reportedNameIds.contains(n.id)} ? 'is-active' : ''"
                     th:disabled="${reportedNameIds.contains(n.id)}"
+                    title="Report"
                     th:attr="hx-post=@{/reports(nameId=${n.id})}"
                     hx-swap="none"
-                    hx-on::after-request="if(event.detail.successful){this.disabled=true;this.textContent='Reported ※'}"></button>
+                    hx-on::after-request="if(event.detail.successful){this.disabled=true;this.classList.add('is-active')}">
+                    <svg class="ic ic-report" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9.5"/>
+                        <line x1="12" y1="7.5" x2="12" y2="13"/>
+                        <line x1="12" y1="16.3" x2="12.01" y2="16.3"/>
+                    </svg>
+                </button>
             </li>
             <li class="empty" th:if="${names.isEmpty()}">
                 Nothing here yet <em>&mdash; try another race, gender, or source.</em>
