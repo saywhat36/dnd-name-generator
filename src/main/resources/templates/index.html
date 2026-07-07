@@ -14,7 +14,7 @@
         :root{
             --paper:#EFEDE6;
             --ink:#141310;
-            --muted:#716C61;
+            --muted:#5f5a50;
             --line:rgba(20,19,16,.16);
             --sans:"Archivo",system-ui,sans-serif;
             --serif:"Instrument Serif",Georgia,serif;
@@ -90,11 +90,11 @@
             padding-block:1.15rem;
         }
         .picker-row .lbl{
-            font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
+            font-size:.86rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
         }
         .opts{display:flex;flex-wrap:wrap;column-gap:1.9rem;row-gap:.5rem}
         .opt{
-            font-size:clamp(1rem,1.5vw,1.2rem);
+            font-size:clamp(1.2rem,2vw,1.55rem);
             text-transform:capitalize;
             background-image:linear-gradient(var(--ink),var(--ink));
             background-repeat:no-repeat;background-position:left 100%;background-size:0% 1px;
@@ -104,7 +104,7 @@
         .opt:hover{background-size:100% 1px}
         .opt.selected{
             font-family:var(--serif);font-style:italic;
-            font-size:clamp(1.1rem,1.7vw,1.35rem);
+            font-size:clamp(1.35rem,2.3vw,1.75rem);
             background-size:0% 1px;
         }
         .opt.selected::before{
@@ -129,11 +129,11 @@
             display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;
             align-items:baseline;column-gap:clamp(1rem,3vw,2.5rem);
             border-top:1px solid var(--line);
-            padding-block:1.2rem;
+            padding-block:.75rem;
         }
         .names li:last-child{border-bottom:1px solid var(--line)}
         .nm{
-            font-size:clamp(1.5rem,3.4vw,2.4rem);font-weight:500;letter-spacing:-.01em;
+            font-size:clamp(1.15rem,2.3vw,1.6rem);font-weight:500;letter-spacing:-.01em;
             position:relative;transition:transform .35s var(--ease);
         }
         .nm::before{
@@ -206,23 +206,18 @@
 
 <header class="nav wrap">
     <span>D&amp;D</span>
-    <a href="#top" aria-label="Back to start"><span class="mark">※</span></a>
+    <a href="#top" aria-label="Back to start"><span class="mark" aria-hidden="true">※</span></a>
     <a class="right" href="#works">
         <span class="swap"><span>Names</span><span aria-hidden="true">Names</span></span>&nbsp;&darr;
     </a>
 </header>
 
 <section class="hero wrap" id="top">
-    <p class="eyebrow">Fantasy name generator <span class="m">※</span> curated lore &amp; conjured by AI</p>
+    <p class="eyebrow">Fantasy name generator</p>
     <h1>
         <span class="ln l1"><span>Name</span></span>
         <span class="ln l2"><span>generator</span></span>
     </h1>
-    <div class="annot">
-        Specialize in<br />
-        Elves <span class="m">※</span> Dwarves<br />
-        Orcs <em>&amp; more</em>
-    </div>
 </section>
 
 <main class="wrap" id="works">
@@ -242,9 +237,10 @@
                 type="button"
                 class="opt"
                 th:each="r : ${races}"
+                th:id="'race-' + ${r.name()}"
                 th:text="${#strings.toLowerCase(#strings.replace(r.name(),'_','-'))}"
                 th:classappend="${r == selectedRace} ? 'selected' : ''"
-                th:attr="hx-get=@{/browse(race=${r},gender=${selectedGender},source=${selectedSource})}"
+                th:attr="aria-pressed=${r == selectedRace},hx-get=@{/browse(race=${r},gender=${selectedGender},source=${selectedSource})}"
                 hx-target="#browser"
                 hx-swap="outerHTML"></button>
         </div>
@@ -257,9 +253,10 @@
                 type="button"
                 class="opt"
                 th:each="g : ${genders}"
+                th:id="'gender-' + ${g.name()}"
                 th:text="${#strings.toLowerCase(g.name())}"
                 th:classappend="${g == selectedGender} ? 'selected' : ''"
-                th:attr="hx-get=@{/browse(race=${selectedRace},gender=${g},source=${selectedSource})}"
+                th:attr="aria-pressed=${g == selectedGender},hx-get=@{/browse(race=${selectedRace},gender=${g},source=${selectedSource})}"
                 hx-target="#browser"
                 hx-swap="outerHTML"></button>
         </div>
@@ -272,9 +269,10 @@
                 type="button"
                 class="opt"
                 th:each="s : ${sources}"
+                th:id="'source-' + ${s.name()}"
                 th:text="${s.name() == 'AI_GENERATED' ? 'AI' : #strings.toLowerCase(s.name())}"
                 th:classappend="${s == selectedSource} ? 'selected' : ''"
-                th:attr="hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${s})}"
+                th:attr="aria-pressed=${s == selectedSource},hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${s})}"
                 hx-target="#browser"
                 hx-swap="outerHTML"></button>
         </div>
@@ -286,10 +284,10 @@
             <span class="b">names <span class="count" th:text="'( ' + ${#numbers.formatInteger(names.size(), 2)} + ' )'">( 00 )</span></span>
         </h2>
 
-        <ul class="names">
+        <ul class="names" aria-live="polite" aria-atomic="false">
             <li class="row" th:each="n : ${names}">
                 <span class="nm" th:text="${n.displayName}"></span>
-                <span class="tag" th:text="${n.source.name() == 'CURATED'} ? 'Curated' : 'AI'"></span>
+                <span class="tag" th:text="${n.source.name() == 'CURATED'} ? 'Handbook' : 'AI'"></span>
                 <button
                     type="button"
                     class="act"
@@ -328,7 +326,7 @@
                 class="cta"
                 th:attr="hx-post=@{/browse/generate-more(race=${selectedRace},gender=${selectedGender},source=${selectedSource})}"
                 hx-target="#browser"
-                hx-swap="outerHTML">Generate <em>five more</em><span class="mark">※</span></button>
+                hx-swap="outerHTML">Generate <em>five more</em><span class="mark" aria-hidden="true">※</span></button>
         </div>
         <div
             id="generating-indicator"
@@ -337,7 +335,7 @@
             th:attr="hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${selectedSource})}"
             hx-trigger="every 2s"
             hx-target="#browser"
-            hx-swap="outerHTML"><span class="spin">※</span> Conjuring <em>five more</em>&hellip;</div>
+            hx-swap="outerHTML"><span class="spin" aria-hidden="true">※</span> Conjuring <em>five more</em>&hellip;</div>
     </section>
 </div>
 </main>
@@ -352,7 +350,7 @@
     </div>
     <div class="baseline wrap">
         <span>&copy;2026</span>
-        <span>※</span>
+        <span aria-hidden="true">※</span>
         <a class="right" href="#top">
             <span class="swap"><span>Back to top</span><span aria-hidden="true">Back to top</span></span>&nbsp;&uarr;
         </a>
