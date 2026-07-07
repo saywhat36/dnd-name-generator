@@ -1235,3 +1235,59 @@ oversight. Revisit if enough review-specific logic accumulates that
 `NameController`/`NameService` start feeling like a grab-bag, per the
 same "don't design for hypothetical future requirements" reasoning
 already applied to the package-placement decision.
+
+## 2026-07-07: Concurrent-writer test for `NameInsertDao`'s native insert
+path, completing the split Week 6 Testcontainers item
+Added `insertGenerated_should_InsertExactlyOnce_When_ConcurrentWritersRaceOnTheSameName`
+to `NameInsertDaoIT`, closing the "native insert path exercised under
+concurrent writers" sub-line split out during the stale-checkbox audit
+above. The existing `NameInsertDaoIT` tests only prove `ON CONFLICT DO
+NOTHING` skips a row that already exists *at call time* -- none of them
+prove anything about two writers racing to insert the same brand-new name
+simultaneously, which is the actual scenario `docs/ARCHITECTURE.md`'s
+unique-constraint rationale names explicitly ("two concurrent generations
+both inserting 'Aelric' for elf/feminine is a real race that
+application-level set-difference checks cannot prevent on their own").
+
+**Real threads against the Testcontainers Postgres instance, not a mocked
+race.** `PoolReplenishmentServiceTest`'s existing stampede-guard test
+(docs/DECISIONS.md, "PoolReplenishmentService" entry) exercises concurrency
+at the application layer with a `CountDownLatch`-blocked mock -- appropriate
+there since it's testing an in-memory `ConcurrentHashMap` guard. This test
+needs the opposite: real concurrent writers hitting real Postgres, since the
+entire point is proving the *database* serializes the conflict correctly,
+which a mock cannot demonstrate (same reasoning already recorded above for
+why `NameInsertDaoIT` uses Testcontainers instead of a mocked
+`JdbcTemplate` at all). 8 threads (an `ExecutorService`) all submit the same
+candidate name for the same race/gender; a `CountDownLatch` holds every
+thread at the start line until all 8 have called `await()`, so they release
+as close to simultaneously as the JDBC connection pool allows, rather than
+serializing behind each other from submission order alone.
+
+**Assertion is on the summed return value, not just row count.** Asserting
+`totalInserted == 1` (summed across all 8 threads' `insertGenerated`
+return values) is a stronger check than counting rows alone -- it also
+proves the seven losing threads' calls returned `0` cleanly (i.e.
+`ON CONFLICT DO NOTHING` really did no-op them) rather than throwing, which
+a bare `SELECT count(*)` on its own wouldn't distinguish from "seven
+threads crashed and only one ever ran."
+
+No production code changed -- this is a verification-only addition to an
+already-correct implementation (the `ON CONFLICT DO NOTHING` SQL clause is
+what Postgres itself uses to serialize the race; nothing in `NameInsertDao`
+needed to change for this test to pass). Attempted `./mvnw test
+-Dtest=NameInsertDaoIT` on this machine: `docker info` succeeds, but
+Testcontainers' actual container-start call fails with `Could not find a
+valid Docker environment` (`BadRequestException (Status 400: ...)` against
+the Docker socket) -- a different symptom than the `ryuk` image-pull
+failure documented above for the same class, but the same underlying
+category of gap (this machine's Docker socket doesn't behave like a full
+Docker daemon for Testcontainers' purposes). Not fixed here, same as the
+prior instances of this gap. Verified instead via `./mvnw compile
+test-compile` (compiles cleanly) and by manually reasoning through the
+test: 8 threads all target the same normalized name under one DB
+transaction each, Postgres's `ON CONFLICT DO NOTHING` guarantees exactly
+one of N concurrent `INSERT`s on a unique index succeeds and the rest
+affect zero rows without erroring, so `totalInserted == 1` and one row in
+the table is the correct expected outcome. Revisit once a Testcontainers-
+capable Docker environment is available locally.
