@@ -1583,3 +1583,29 @@ switching, never requested for this effort) and the "Deferred within Phase 1
 (optional, after core weeks)" memory/conversational-refinement item, plus
 Phase 2 (auth) and Phase 3 (backstories/streaming), both already deferred by
 design per `docs/ARCHITECTURE.md`'s "Phase boundaries" section.
+
+Caught in review of #45, fixed in this PR:
+
+- **`hx-on::after-request` marked buttons as succeeded regardless of the
+  actual response status.** htmx fires the `htmx:afterRequest` event (which
+  `hx-on::after-request` binds to) on failed requests too -- a 404 (e.g. the
+  name was deleted concurrently, per `FavoriteController.requireNameExists`)
+  or a 5xx would still permanently disable the button and show "Favorited
+  ✓"/"Reported ✓", even though nothing was persisted, with no way to recover
+  short of a full page reload. Fixed by gating both handlers on
+  `event.detail.successful` (`if(event.detail.successful){...}`).
+
+One finding investigated and confirmed not a bug: a review agent flagged the
+`th:text="... 'Favorited &#10003;' : ..."` numeric HTML entity as unlikely to
+render correctly under `th:text`'s default HTML-escaping. Verified false by
+starting the app locally and inspecting the raw response bytes
+(`hexdump -C`) of a pre-disabled "Favorited" button: the entity decodes
+correctly to the UTF-8 checkmark (`e2 9c 93` = U+2713) in the served HTML.
+Root cause of why the agent's reasoning didn't hold: `&#10003;` sits inside
+an HTML *attribute value* (`th:text="..."`) in the source template, and
+attribute values are HTML-entity-decoded by Thymeleaf's underlying parser
+(attoparser) before the OGNL string literal inside is ever evaluated -- by
+the time `th:text` evaluates and re-escapes the literal, it already contains
+the real ✓ character, not the literal text `&#10003;`. No code change; noted
+here as a documented false positive rather than silently discarded, per this
+PR's review process.

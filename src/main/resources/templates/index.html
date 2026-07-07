@@ -67,14 +67,14 @@
                 th:disabled="${favoritedNameIds.contains(n.id)}"
                 th:attr="hx-post=@{/favorites(nameId=${n.id})}"
                 hx-swap="none"
-                hx-on::after-request="this.disabled=true; this.textContent='Favorited ✓'"></button>
+                hx-on::after-request="if(event.detail.successful){this.disabled=true;this.textContent='Favorited ✓'}"></button>
             <button
                 type="button"
                 th:text="${reportedNameIds.contains(n.id)} ? 'Reported &#10003;' : 'Report'"
                 th:disabled="${reportedNameIds.contains(n.id)}"
                 th:attr="hx-post=@{/reports(nameId=${n.id})}"
                 hx-swap="none"
-                hx-on::after-request="this.disabled=true; this.textContent='Reported ✓'"></button>
+                hx-on::after-request="if(event.detail.successful){this.disabled=true;this.textContent='Reported ✓'}"></button>
         </li>
         <li th:if="${names.isEmpty()}">No names yet for this race/gender/source.</li>
     </ul>
