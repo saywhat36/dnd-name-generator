@@ -316,11 +316,20 @@
                     type="button"
                     class="act icon-btn"
                     th:classappend="${favoritedNameIds.contains(n.id)} ? 'is-active' : ''"
-                    th:disabled="${favoritedNameIds.contains(n.id)}"
-                    title="Favourite"
-                    th:attr="hx-post=@{/favorites(nameId=${n.id})}"
+                    th:attr="data-add-url=@{/favorites(nameId=${n.id})},
+                             data-remove-url=@{/favorites/{id}(id=${n.id})},
+                             hx-post=${favoritedNameIds.contains(n.id)} ? null : @{/favorites(nameId=${n.id})},
+                             hx-delete=${favoritedNameIds.contains(n.id)} ? @{/favorites/{id}(id=${n.id})} : null,
+                             aria-pressed=${favoritedNameIds.contains(n.id)}"
+                    th:title="${favoritedNameIds.contains(n.id)} ? 'Remove favourite' : 'Favourite'"
                     hx-swap="none"
-                    hx-on::after-request="if(event.detail.successful){this.disabled=true;this.classList.add('is-active')}">
+                    hx-on::after-request="if(event.detail.successful){
+                        const fav=this.classList.toggle('is-active');
+                        this.title=fav?'Remove favourite':'Favourite';
+                        this.setAttribute('aria-pressed',fav);
+                        if(fav){this.removeAttribute('hx-post');this.setAttribute('hx-delete',this.dataset.removeUrl);}
+                        else{this.removeAttribute('hx-delete');this.setAttribute('hx-post',this.dataset.addUrl);}
+                    }">
                     <svg class="ic ic-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21.2l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/>
                     </svg>
