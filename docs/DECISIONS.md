@@ -1393,3 +1393,88 @@ than moving it onto `ChatClientConfig`'s shared `ChatClient.Builder` (as
 `SimpleLoggerAdvisor` was in the prior PR) is the correct call, not an
 inconsistency -- `defaultOptions` on the builder would apply to `testPrompt`
 too, contradicting this item's own "per-use-case, not global" framing.
+
+## 2026-07-07: `RateLimitFilter` + per-session Bucket4j/Caffeine buckets --
+scaffolding-only, deliberately unregistered
+Third Week 6 slice. Before starting, explicitly confirmed the tradeoff with
+the user rather than assuming: per `docs/ARCHITECTURE.md`'s "Rate limiting"
+section, there is no synchronous LLM endpoint anywhere in Phase 1 for a rate
+limiter to actually protect -- name-serving is DB-only and replenishment is
+async, off the request path -- so this PR is necessarily scaffolding built
+ahead of its real use case (Phase 3's backstory endpoint), not a filter
+protecting something real today. User chose to build the scaffolding now
+rather than defer the whole item to Phase 3.
+
+**New dependencies**: `com.bucket4j:bucket4j_jdk17-core:8.14.0` (no version
+managed by any BOM already in `pom.xml`, so pinned explicitly -- current
+release as of this PR) and `com.github.ben-manes.caffeine:caffeine` (version
+resolved via `spring-boot-starter-parent`'s dependency management, already
+present transitively elsewhere in the dependency tree, so no explicit version
+needed). Matches `docs/ARCHITECTURE.md`'s explicit prior choice of both
+libraries.
+
+**`RateLimitFilter` (new `ratelimit/` package)**: per-session token-bucket
+limiter, `Bucket4j`'s classic `Bandwidth`/`Refill` API, one `Bucket` per
+session id, held in a `Caffeine` cache with `expireAfterAccess(bucketTtl)` --
+per `docs/ROADMAP.md`'s explicit "not an unbounded map" requirement, since
+sessions are just cookies with nothing else to evict them. Session id is read
+from `SessionIdFilter.REQUEST_ATTRIBUTE`, matching how `FavoriteController`/
+`NameReportController` already read it -- this filter is expected to always
+run after `SessionIdFilter` once it's actually wired into the chain. A
+missing session id (attribute not yet set) fails open (request is allowed
+through) rather than throwing or blocking, since there is nothing safe or
+meaningful to rate-limit by without a session identity.
+
+**Deliberately has no `@Component` annotation, and is not registered via any
+`FilterRegistrationBean`.** This is the crux of "scaffolding, not applied to
+name-serving": Spring Boot's embedded servlet container auto-registers every
+`Filter` bean against `/*` by default -- the exact same auto-registration
+behavior that silently broke a `FavoriteControllerTest` assumption caught in
+review of #37 (`@WebMvcTest` auto-registering the real `SessionIdFilter`, see
+that entry above). Annotating `RateLimitFilter` as a `@Component` today would
+make it intercept every request in the running app, including plain
+name-serving GETs -- exactly what `docs/ARCHITECTURE.md` says not to do in
+Phase 1. Leaving the annotation off is therefore the deliberate no-op state
+that satisfies "not applied to name-serving," not an oversight or an
+unfinished wiring step. Phase 3 adds the `@Component` (or a
+`FilterRegistrationBean` scoped specifically to the backstory URL pattern) at
+the point this filter is wired to a real synchronous-LLM endpoint.
+
+**No `app.rate-limit.*` config wired in either.** Constructor takes
+`capacity`/`refillPeriod`/`bucketTtl` as plain parameters rather than
+`@Value`-injected fields, since there's no Spring bean definition for Spring
+to inject into yet -- adding `@Value` defaults now would imply a config
+surface that does nothing until Phase 3 actually constructs this filter as a
+bean. Phase 3's wiring step adds both the `@Value` config (following the
+existing `app.*` convention) and the bean definition together.
+
+**Tests**: `RateLimitFilterTest`, plain unit tests (`MockHttpServletRequest`/
+`MockHttpServletResponse`, mocked `FilterChain`), matching `SessionIdFilterTest`'s
+existing pattern exactly -- construct the filter directly and call
+`doFilterInternal` rather than going through a real filter chain, since
+there's no Spring context or registration to exercise. Covers: request
+allowed while tokens remain, `429` returned (and `FilterChain.doFilter` never
+called) once a single-capacity bucket is exhausted, separate sessions get
+independent buckets, and the no-session-id fail-open path. Unlike most of
+this codebase's recent additions, this test class needs no class-level
+Mockito mocking (`FilterChain` is an interface, `Bucket`/`Cache` are real
+instances, not mocks) -- confirmed by actually running `./mvnw test
+-Dtest=RateLimitFilterTest` locally, which passed (4/4), sidestepping the
+pre-existing JDK 26/Mockito inline-mock-maker gap that blocks most other test
+classes in this repo from running locally.
+
+Caught in review of #44, fixed in this PR:
+
+- **Class Javadoc restated the same scaffolding rationale already recorded in
+  this entry and in `docs/ARCHITECTURE.md`'s "Rate limiting" section**,
+  diverging from `SessionIdFilter`'s established terse-Javadoc pattern (a
+  couple of sentences, not a full paragraph re-deriving the reasoning
+  in-code). Trimmed to a two-sentence Javadoc pointing at `docs/DECISIONS.md`
+  for the full reasoning, rather than duplicating it -- this doc/entry pair is
+  now the single source of truth, not the source comment as well.
+- **`Refill.greedy(...)` is deprecated as of bucket4j 8.14.0** (in favor of
+  `Bandwidth.builder()`), functionally identical but flagged for removal in a
+  future major version. Switched `newBucket()` to
+  `Bandwidth.builder().capacity(capacity).refillGreedy(capacity,
+  refillPeriod).build()` -- no behavior change, confirmed by rerunning
+  `RateLimitFilterTest` locally (still 4/4 passing).
