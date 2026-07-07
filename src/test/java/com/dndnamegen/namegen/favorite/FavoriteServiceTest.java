@@ -11,6 +11,7 @@ import com.dndnamegen.namegen.name.Name;
 import com.dndnamegen.namegen.name.NameRepository;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -116,5 +117,23 @@ class FavoriteServiceTest {
         List<Name> result = favoriteService.listFavorites("session-1");
 
         assertThat(result).containsExactly(name1);
+    }
+
+    @Test
+    void getFavoritedNameIds_should_ReturnIdsAsASet_When_SessionHasFavorites() {
+        when(favoriteRepository.findNameIdBySessionId("session-1")).thenReturn(List.of(2L, 1L));
+
+        Set<Long> result = favoriteService.getFavoritedNameIds("session-1");
+
+        assertThat(result).containsExactlyInAnyOrder(1L, 2L);
+    }
+
+    @Test
+    void getFavoritedNameIds_should_ReturnEmptySet_When_SessionHasNoFavorites() {
+        when(favoriteRepository.findNameIdBySessionId("session-1")).thenReturn(List.of());
+
+        Set<Long> result = favoriteService.getFavoritedNameIds("session-1");
+
+        assertThat(result).isEmpty();
     }
 }

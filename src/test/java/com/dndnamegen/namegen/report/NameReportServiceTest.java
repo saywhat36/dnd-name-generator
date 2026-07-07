@@ -7,7 +7,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 
@@ -54,5 +56,23 @@ class NameReportServiceTest {
         NameReport result = nameReportService.reportName("session-1", 1L, "reason");
 
         assertThat(result).isSameAs(winnersRow);
+    }
+
+    @Test
+    void getReportedNameIds_should_ReturnIdsAsASet_When_SessionHasReports() {
+        when(nameReportRepository.findNameIdBySessionId("session-1")).thenReturn(List.of(2L, 1L));
+
+        Set<Long> result = nameReportService.getReportedNameIds("session-1");
+
+        assertThat(result).containsExactlyInAnyOrder(1L, 2L);
+    }
+
+    @Test
+    void getReportedNameIds_should_ReturnEmptySet_When_SessionHasNoReports() {
+        when(nameReportRepository.findNameIdBySessionId("session-1")).thenReturn(List.of());
+
+        Set<Long> result = nameReportService.getReportedNameIds("session-1");
+
+        assertThat(result).isEmpty();
     }
 }

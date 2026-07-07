@@ -10,6 +10,8 @@
         .toggle-group { margin-bottom: 0.5rem; }
         .toggle-group button { margin-right: 0.25rem; }
         .toggle-group button.selected { font-weight: bold; text-decoration: underline; }
+        .name-row { margin-bottom: 0.25rem; }
+        .name-row button { margin-left: 0.5rem; }
     </style>
 </head>
 <body>
@@ -57,7 +59,23 @@
     </div>
 
     <ul>
-        <li th:each="n : ${names}" th:text="${n.displayName}"></li>
+        <li class="name-row" th:each="n : ${names}">
+            <span th:text="${n.displayName}"></span>
+            <button
+                type="button"
+                th:text="${favoritedNameIds.contains(n.id)} ? 'Favorited &#10003;' : 'Favorite'"
+                th:disabled="${favoritedNameIds.contains(n.id)}"
+                th:attr="hx-post=@{/favorites(nameId=${n.id})}"
+                hx-swap="none"
+                hx-on::after-request="if(event.detail.successful){this.disabled=true;this.textContent='Favorited ✓'}"></button>
+            <button
+                type="button"
+                th:text="${reportedNameIds.contains(n.id)} ? 'Reported &#10003;' : 'Report'"
+                th:disabled="${reportedNameIds.contains(n.id)}"
+                th:attr="hx-post=@{/reports(nameId=${n.id})}"
+                hx-swap="none"
+                hx-on::after-request="if(event.detail.successful){this.disabled=true;this.textContent='Reported ✓'}"></button>
+        </li>
         <li th:if="${names.isEmpty()}">No names yet for this race/gender/source.</li>
     </ul>
 </div>

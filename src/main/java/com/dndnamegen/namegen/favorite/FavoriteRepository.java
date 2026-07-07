@@ -3,6 +3,8 @@ package com.dndnamegen.namegen.favorite;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface FavoriteRepository extends JpaRepository<Favorite, Long> {
 
@@ -16,4 +18,16 @@ public interface FavoriteRepository extends JpaRepository<Favorite, Long> {
     Optional<Favorite> findBySessionIdAndNameId(String sessionId, Long nameId);
 
     void deleteBySessionIdAndNameId(String sessionId, Long nameId);
+
+    /**
+     * Ids only, not full rows -- the browse page only needs membership per name id to mark
+     * already-favorited names, not the full Favorite/Name data listFavorites returns.
+     * Explicit @Query rather than a derived findNameIdBySessionId: that derivation, despite
+     * matching Favorite.nameId, produced a query Hibernate 6.5.3 selected as full Favorite
+     * rows against a declared List<Long> return type ("QueryTypeMismatchException: ...
+     * multiple selections"), reproduced by actually running the app -- not a hypothetical
+     * edge case worked around speculatively.
+     */
+    @Query("SELECT f.nameId FROM Favorite f WHERE f.sessionId = :sessionId")
+    List<Long> findNameIdBySessionId(@Param("sessionId") String sessionId);
 }

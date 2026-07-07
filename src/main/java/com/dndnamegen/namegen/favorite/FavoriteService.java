@@ -5,6 +5,7 @@ import com.dndnamegen.namegen.name.NameRepository;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -67,5 +68,14 @@ public class FavoriteService {
                 nameRepository.findAllById(orderedNameIds).stream().collect(Collectors.toMap(Name::getId, Function.identity()));
 
         return orderedNameIds.stream().map(namesById::get).filter(Objects::nonNull).toList();
+    }
+
+    /**
+     * Used by the browse page to mark already-favorited names on initial render -- a Set
+     * since callers only need membership per name id, not order or the Favorite rows
+     * themselves (see listFavorites for the ordered, full-row variant).
+     */
+    public Set<Long> getFavoritedNameIds(String sessionId) {
+        return Set.copyOf(favoriteRepository.findNameIdBySessionId(sessionId));
     }
 }

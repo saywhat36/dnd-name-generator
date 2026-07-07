@@ -100,8 +100,7 @@ Status legend: not started / in progress / done
   an unbounded map
 - [x] htmx + Thymeleaf frontend: race buttons, gender buttons, source
   toggle (as button groups, not dropdowns)
-- [ ] htmx + Thymeleaf frontend: favorite/report actions -- deferred
-  until Week 5's favorite/report backend exists
+- [x] htmx + Thymeleaf frontend: favorite/report actions
 
 ### Deferred within Phase 1 (optional, after core weeks)
 - [ ] Memory/conversational refinement: `ChatMemory` +

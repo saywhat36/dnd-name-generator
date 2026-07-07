@@ -9,24 +9,59 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.dndnamegen.namegen.favorite.FavoriteService;
 import com.dndnamegen.namegen.name.Gender;
 import com.dndnamegen.namegen.name.Name;
 import com.dndnamegen.namegen.name.NameService;
 import com.dndnamegen.namegen.name.NameSourceFilter;
 import com.dndnamegen.namegen.name.Race;
+import com.dndnamegen.namegen.report.NameReportService;
+import com.dndnamegen.namegen.session.SessionIdFilter;
+import jakarta.servlet.http.Cookie;
 import java.util.List;
+import java.util.Set;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 @WebMvcTest(NameBrowserController.class)
 class NameBrowserControllerTest {
 
+    private static final String SESSION_ID = "11111111-1111-1111-1111-111111111111";
+
     @Autowired private MockMvc mockMvc;
 
     @MockBean private NameService nameService;
+
+    @MockBean private FavoriteService favoriteService;
+
+    @MockBean private NameReportService nameReportService;
+
+    /**
+     * @WebMvcTest auto-registers Filter beans, so the real SessionIdFilter runs in this
+     * slice -- see FavoriteControllerTest for why a cookie (not a directly-set request
+     * attribute) is required to control the session id the filter passes through.
+     */
+    private static MockHttpServletRequestBuilder withSession(MockHttpServletRequestBuilder builder) {
+        return builder.cookie(new Cookie(SessionIdFilter.COOKIE_NAME, SESSION_ID));
+    }
+
+    /**
+     * Every render calls both id-lookup services regardless of whether the result list is
+     * empty, so an unstubbed mock returning null would NPE inside the template's
+     * favoritedNameIds.contains(...)/reportedNameIds.contains(...) calls. Defaults to "no
+     * prior activity" for every test; the one test that cares about pre-disabled buttons
+     * overrides this.
+     */
+    @BeforeEach
+    void stubNoPriorSessionActivityByDefault() {
+        when(favoriteService.getFavoritedNameIds(SESSION_ID)).thenReturn(Set.of());
+        when(nameReportService.getReportedNameIds(SESSION_ID)).thenReturn(Set.of());
+    }
 
     @Test
     void index_should_RenderDefaultRaceGenderAndSourceResults_When_PageLoads() throws Exception {
@@ -35,11 +70,28 @@ class NameBrowserControllerTest {
         when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED))
                 .thenReturn(List.of(curatedName));
 
-        mockMvc.perform(get("/"))
+        mockMvc.perform(withSession(get("/")))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Adrie")));
 
         verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE), eq(NameSourceFilter.CURATED));
+    }
+
+    @Test
+    void index_should_RenderFavoriteAndReportAsPreDisabled_When_SessionAlreadyActedOnAName() throws Exception {
+        Name curatedName = mock(Name.class);
+        when(curatedName.getId()).thenReturn(1L);
+        when(curatedName.getDisplayName()).thenReturn("Adrie");
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED))
+                .thenReturn(List.of(curatedName));
+        when(favoriteService.getFavoritedNameIds(SESSION_ID)).thenReturn(Set.of(1L));
+        when(nameReportService.getReportedNameIds(SESSION_ID)).thenReturn(Set.of(1L));
+
+        mockMvc.perform(withSession(get("/")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Favorited")))
+                .andExpect(content().string(containsString("Reported")))
+                .andExpect(content().string(containsString("disabled")));
     }
 
     @Test
@@ -49,7 +101,7 @@ class NameBrowserControllerTest {
         when(nameService.getNames(Race.HALF_ORC, Gender.MASCULINE, NameSourceFilter.CURATED))
                 .thenReturn(List.of(curatedName));
 
-        mockMvc.perform(get("/browse").param("race", "HALF_ORC").param("gender", "MASCULINE"))
+        mockMvc.perform(withSession(get("/browse").param("race", "HALF_ORC").param("gender", "MASCULINE")))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Argran")));
 
@@ -63,7 +115,8 @@ class NameBrowserControllerTest {
         when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.BOTH))
                 .thenReturn(List.of(aiName));
 
-        mockMvc.perform(get("/browse").param("race", "ELF").param("gender", "FEMININE").param("source", "BOTH"))
+        mockMvc.perform(
+                        withSession(get("/browse").param("race", "ELF").param("gender", "FEMININE").param("source", "BOTH")))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Sylvaine")));
 
@@ -74,7 +127,7 @@ class NameBrowserControllerTest {
     void browse_should_RenderEmptyMessage_When_NoNamesExistForSelection() throws Exception {
         when(nameService.getNames(Race.HUMAN, Gender.MASCULINE, NameSourceFilter.CURATED)).thenReturn(List.of());
 
-        mockMvc.perform(get("/browse").param("race", "HUMAN").param("gender", "MASCULINE"))
+        mockMvc.perform(withSession(get("/browse").param("race", "HUMAN").param("gender", "MASCULINE")))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("No names yet for this race/gender/source")));
     }
