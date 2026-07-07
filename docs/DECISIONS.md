@@ -1609,3 +1609,49 @@ the time `th:text` evaluates and re-escapes the literal, it already contains
 the real ✓ character, not the literal text `&#10003;`. No code change; noted
 here as a documented false positive rather than silently discarded, per this
 PR's review process.
+
+## 2026-07-07: `findNormalizedNameByRaceAndGender` fixed to an explicit `@Query`
+-- pre-existing production bug, not part of the Week 6 work above
+Found while investigating a live report that the AI/BOTH name source appeared broken on the
+deployed Render instance. Render logs showed real Gemini calls succeeding (a genuine batch of
+5 names came back for ELF/FEMININE), but every replenishment cycle then crashed in
+`DeduplicationService.filterDuplicates` with `QueryTypeMismatchException: Specified result type
+[java.lang.String] did not match Query selection type [Name] - multiple selections`, before any
+insert happened. Filed as
+[#46](https://github.com/saywhat36/dnd-name-generator/issues/46), fixed in the PR that closes it.
+
+**Same bug class as the `findNameIdBySessionId` fix earlier in this file, independently
+discovered in a different method.** `NameRepository.findNormalizedNameByRaceAndGender` (Week 2)
+was a derived Spring Data method declared to return `List<String>` -- a single-property
+projection of `normalizedName` -- but on this Hibernate 6.5.3.Final / Spring Data JPA 3.3.4
+stack, the derivation compiled to a full-entity `SELECT` against `Name` instead, so the
+declared scalar return type never matched. This predates the favorite/report buttons PR and
+was missed there since it's a different repository method; the fix is identical: an explicit
+`@Query("SELECT n.normalizedName FROM Name n WHERE n.race = :race AND n.gender = :gender")`.
+
+**Impact was worse than a missing API key.** A missing/invalid key (the local-dev gap found
+first) fails loudly and immediately, before any cost is incurred. This bug let a real, billed
+LLM call succeed and then discarded the result every single time, for every combo, since Week 2
+-- the AI-generated pool has never actually grown on the deployed instance. No test caught it:
+`DeduplicationServiceTest` mocks `NameRepository` (an interface), so it proves
+`filterDuplicates`'s logic is correct but gives zero signal on whether the real query behind it
+even compiles correctly under a live JPA provider.
+
+**Regression test added**: `NameRepositoryIT` (Testcontainers, matching `GenerationLogIT`'s
+pattern), three cases covering rows-exist / no-rows / status-and-source-agnostic (the last one
+specifically protects the "regardless of status or source" contract already documented on this
+method's javadoc, which a status-scoped derived query could silently violate later). Uses
+`DRAGONBORN` rather than e.g. `ELF` for the isolated-data cases -- `ELF` has hundreds of curated
+rows seeded by `V3__seed_curated_names_full.sql`, which would make an exact-match assertion
+fragile; `DRAGONBORN` has the race CHECK constraint but no curated seed data, per that
+migration's own decision entry above.
+
+**Verified against a real JPA provider before finalizing**, not just compiled. Could not run
+`NameRepositoryIT` itself locally -- same pre-existing Testcontainers/Docker-socket
+incompatibility documented in every other `*IT` entry in this file. Instead of only reasoning
+through it, wrote a temporary (not committed) `@SpringBootTest` pointed at the already-running
+`docker compose` Postgres instance rather than Testcontainers, exercising the exact fixed query
+end-to-end -- it passed (`Tests run: 1, Failures: 0, Errors: 0`), then the scratch file was
+deleted before committing the real `NameRepositoryIT`. `./mvnw compile test-compile` confirms
+everything compiles; `DeduplicationServiceTest` (6/6, unaffected by the JDK 26/Mockito gap since
+it mocks an interface) confirms no regression to the surrounding dedup logic.

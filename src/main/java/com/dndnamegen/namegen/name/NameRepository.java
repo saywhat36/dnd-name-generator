@@ -32,8 +32,15 @@ public interface NameRepository extends JpaRepository<Name, Long> {
      * Every existing normalized name for this race/gender, regardless of status or
      * source -- the (normalized_name, race, gender) unique constraint applies across
      * all rows, not just ACTIVE/CURATED ones, so dedup pre-filtering must too.
+     * Explicit @Query, not a derived method: the derived form compiled to a full-entity
+     * SELECT against Name on this Hibernate/Spring Data stack despite the declared
+     * List<String> return type, throwing QueryTypeMismatchException the moment a real
+     * replenishment cycle reached this call in production -- see docs/DECISIONS.md and
+     * https://github.com/saywhat36/dnd-name-generator/issues/46. Same fix, same root
+     * cause, as FavoriteRepository/NameReportRepository's findNameIdBySessionId.
      */
-    List<String> findNormalizedNameByRaceAndGender(Race race, Gender gender);
+    @Query("SELECT n.normalizedName FROM Name n WHERE n.race = :race AND n.gender = :gender")
+    List<String> findNormalizedNameByRaceAndGender(@Param("race") Race race, @Param("gender") Gender gender);
 
     /**
      * Bulk JPQL update rather than a JPA save() -- Name has no setters and is otherwise
