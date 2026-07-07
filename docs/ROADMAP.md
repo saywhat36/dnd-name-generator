@@ -77,17 +77,21 @@ Status legend: not started / in progress / done
   `AI_REFINED` source value, `generation_log_id` set, `ON CONFLICT`
   handling links to an existing row on collision
 - [x] `report/` package: report-name endpoint, writes to `name_reports`
-- [ ] Manual review flow to flip `names.status` to FLAGGED
+- [x] Manual review flow to flip `names.status` to FLAGGED
 
 ### Week 6 -- Observability + hardening
 - [ ] Actuator + Micrometer wired up
 - [ ] `SimpleLoggerAdvisor` on ChatClient
 - [ ] Per-use-case `ChatOptions` (temperature tuning for generation)
-- [ ] Testcontainers integration tests, including the native insert
-  path under concurrent writers
-- [ ] Mocked-`ChatModel` unit tests for service layer
-- [ ] Eval-style test against a live provider (separate test run, not
-  part of default build)
+- [x] Testcontainers integration tests (`MigrationIT`, `NameInsertDaoIT`,
+  `GenerationLogIT`)
+- [ ] Native insert path exercised under concurrent writers (split out
+  of the line above -- the Testcontainers ITs exist but none of them
+  spin up concurrent writers yet)
+- [x] Mocked-`ChatModel` unit tests for service layer
+  (`NameGenerationServiceTest` mocks `ChatClient`)
+- [x] Eval-style test against a live provider (separate test run, not
+  part of default build) -- `NameGenerationServiceEvalIT`
 - [ ] `RateLimitFilter` scoped correctly: not applied to name-serving
   (DB-only), reserved for endpoints with a synchronous LLM call
   (none yet in Phase 1 -- this becomes active in Phase 3)

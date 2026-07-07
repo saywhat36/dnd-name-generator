@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -71,5 +72,21 @@ class NameControllerTest {
                         .param("gender", "FEMININE")
                         .param("source", "NOT_A_REAL_SOURCE"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void flagName_should_ReturnNoContent_When_NameExists() throws Exception {
+        when(nameService.flagName(1L)).thenReturn(true);
+
+        mockMvc.perform(post("/names/1/flag")).andExpect(status().isNoContent());
+
+        verify(nameService).flagName(1L);
+    }
+
+    @Test
+    void flagName_should_ReturnNotFound_When_NameDoesNotExist() throws Exception {
+        when(nameService.flagName(1L)).thenReturn(false);
+
+        mockMvc.perform(post("/names/1/flag")).andExpect(status().isNotFound());
     }
 }

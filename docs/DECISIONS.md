@@ -1111,3 +1111,127 @@ and `FavoriteService.saveNew` (and `NameReportController`/`FavoriteController`'s
 a shared helper -- only two occurrences exist, and this codebase's own
 convention favors "three similar lines... over a premature abstraction." Revisit
 if a third favorite/report-shaped feature package needs the same pattern.
+
+## 2026-07-07: Stale Week 6 checkbox audit
+Before starting new Week 5/6 work, re-checked every unchecked Week 6
+`ROADMAP.md` box against what already exists in `src/test`, following the
+same practice that caught a stale Week 3 checkbox in an earlier session.
+Found three:
+
+- **"Mocked-`ChatModel` unit tests for service layer"** -- already fully
+  satisfied by `NameGenerationServiceTest`, which mocks `ChatClient` (per
+  `CLAUDE.md`'s "mock `ChatModel`/`ChatClient`" convention) across the
+  retry, parse-failure, and under-yield paths. Ticked, no code change.
+- **"Eval-style test against a live provider"** -- already fully satisfied
+  by `NameGenerationServiceEvalIT` (asserts parsing, count, and no
+  duplicates against curated names) plus the `**/*EvalIT.java` Surefire
+  exclude recorded above, which keeps it out of the default build exactly
+  as this line specifies. Ticked, no code change.
+- **"Testcontainers integration tests, including the native insert path
+  under concurrent writers"** -- only partially stale. `MigrationIT`,
+  `NameInsertDaoIT`, and `GenerationLogIT` all exist and cover the base
+  Testcontainers requirement, but none of them exercise concurrent
+  writers -- `NameInsertDaoIT` has no `Thread`/`Executor`/`CountDownLatch`
+  usage. Split into two lines (matching the precedent set by the
+  `PoolReplenishmentService` and Week 6-frontend entries above, both of
+  which split a single roadmap line when only part of it was done): the
+  base Testcontainers-ITs line is ticked, and a new line for the
+  concurrent-writers sub-case stays unchecked as real remaining work.
+
+Everything else unchecked in Week 6 (Actuator/Micrometer,
+`SimpleLoggerAdvisor`, per-use-case `ChatOptions`, `RateLimitFilter`,
+Bucket4j, htmx favorite/report buttons) was confirmed genuinely unbuilt --
+no matching code anywhere in `src/main` -- so no further checkbox changes.
+
+## 2026-07-07: Manual review flow -- flip `names.status` to FLAGGED, third
+and final Week 5 slice
+Added `NameRepository.updateStatus(Long, NameStatus)`, a `@Modifying` JPQL
+bulk update, plus `NameService.flagName(Long)` and
+`POST /names/{id}/flag` on the existing `NameController` -- no new
+package. Considered a dedicated `review/` package matching `favorite/`/
+`report/`'s shape, but the operation is a single field flip on the
+existing `Name` aggregate with no new entity, so it lives alongside
+`NameController`/`NameService` instead, per this codebase's own
+"don't design for hypothetical future requirements" convention (adding a
+package for one small operation would be the same kind of premature
+structure this codebase already avoids for near-identical
+`Favorite`/`NameReport` service code).
+
+**Bulk JPQL update, not a JPA `save()`.** `Name` has no setters and is
+otherwise read-only via JPA -- pool writes go through `NameInsertDao`'s
+native path instead, but for an unrelated reason (`ON CONFLICT`
+batch-insert poisoning, see above). A single-row status flip has neither
+problem, so a plain `@Modifying @Query("UPDATE Name n SET n.status =
+:status WHERE n.id = :id")` is the simplest correct tool, rather than
+adding a setter to `Name` for one field or reusing `NameInsertDao` for an
+unrelated write shape. `NameService.flagName` is `@Transactional`, since
+Spring Data requires `@Modifying` queries to run inside a transaction.
+
+**Naturally idempotent, no extra check needed.** The `WHERE` clause
+matches on `id` alone, not current `status` -- re-flagging an
+already-FLAGGED row still matches and returns `1` (affected-row count),
+just with no observable change. This also means `flagName`'s return value
+(`updateStatus(...) > 0`) doubles as the "does this name exist" signal,
+so `NameController.flagName` needs no separate `existsById` round trip
+before calling the service (unlike `NameReportController`'s deliberate
+extra check, which exists there only because of a real ambiguity risk
+between an FK violation and a unique-constraint violation -- not present
+here).
+
+**Scope: flip to FLAGGED only, keyed on a name id supplied by a human
+reviewer -- no listing/aggregation endpoint.** Considered building a "list
+names with pending reports" endpoint to support the "manual review"
+framing, since `docs/DECISIONS.md`'s `report/` entry explicitly
+forward-referenced "the future FLAGGED-review flow reads reports in
+aggregate (across sessions)." Deliberately not built here: there's no
+admin auth or UI in Phase 1 to gate such an endpoint behind, and nothing
+in `docs/ROADMAP.md`'s Week 5 line asks for one -- it says "flip
+`names.status` to FLAGGED," not "build a review dashboard." A reviewer can
+already find candidates by querying `name_reports` directly. Revisit if
+and when Phase 2 auth exists and an admin-facing view is actually wanted;
+building a listing endpoint now, unused by anything, would be exactly the
+kind of premature feature this codebase's conventions warn against.
+
+**No status-transition guard (e.g. rejecting a flip from `REJECTED`).**
+Nothing in this codebase currently produces `NameStatus.REJECTED` -- it's
+schema-supported but otherwise dormant -- so guarding a transition away
+from a status nothing ever sets would be speculative. Revisit once a
+REJECTED-producing path exists.
+
+Tests: `NameServiceTest` (existence/non-existence via the returned
+affected-row count) and `@WebMvcTest` `NameControllerTest` (204 vs. 404),
+both plain-mock, matching the existing convention. Could not run `./mvnw
+test` locally -- same pre-existing JDK 26/Mockito inline-mock-maker gap
+documented above; confirmed via `./mvnw compile test-compile` that
+everything compiles cleanly.
+
+Caught in review of #39, fixed in this PR:
+
+- **`NameRepository.updateStatus` had no `clearAutomatically = true`.** A
+  bulk JPQL `@Modifying` update bypasses the Hibernate persistence context
+  entirely, so it doesn't invalidate any `Name` entity already loaded in
+  the same transaction. No caller does that today -- `flagName`'s
+  `@Transactional` boundary contains only the one update call -- so this
+  had no live trigger, but it's a landmine for the next caller that adds
+  a `findById` before the update in the same transaction (e.g. to return
+  a richer 404 message). Added `clearAutomatically = true` defensively
+  rather than waiting for a caller to hit it.
+
+One finding filed as a follow-up issue rather than fixed here:
+[#40](https://github.com/saywhat36/dnd-name-generator/issues/40)
+(flagging a name doesn't free its `(normalized_name, race, gender)`
+unique-constraint slot, so `DeduplicationService`'s existing-row lookup
+and `NameInsertDao`'s `ON CONFLICT DO NOTHING` both silently block that
+exact name from ever being regenerated -- needs a real design decision
+about whether flagged/rejected names should keep occupying their slot,
+bigger than this PR's scope).
+
+One finding considered and deliberately not changed: putting `flagName`
+directly on `NameController`/`NameService` rather than a new `review/`
+package (matching `favorite/`/`report/`'s shape). This was already an
+explicit, reasoned choice recorded above ("Scope" section) -- a single
+field flip on the existing `Name` aggregate, no new entity -- not an
+oversight. Revisit if enough review-specific logic accumulates that
+`NameController`/`NameService` start feeling like a grab-bag, per the
+same "don't design for hypothetical future requirements" reasoning
+already applied to the package-placement decision.
