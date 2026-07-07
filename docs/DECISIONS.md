@@ -1655,3 +1655,11 @@ end-to-end -- it passed (`Tests run: 1, Failures: 0, Errors: 0`), then the scrat
 deleted before committing the real `NameRepositoryIT`. `./mvnw compile test-compile` confirms
 everything compiles; `DeduplicationServiceTest` (6/6, unaffected by the JDK 26/Mockito gap since
 it mocks an interface) confirms no regression to the surrounding dedup logic.
+
+## 2026-07-07: Removed unused `spring-boot-starter-validation` dependency
+[#12](https://github.com/saywhat36/dnd-name-generator/issues/12) flagged that
+this dependency was added without a `DECISIONS.md` entry and without any
+actual use -- confirmed nothing in `src/main` or `src/test` references
+`jakarta.validation`, `@Valid`, or any Bean Validation annotation. Removed
+from `pom.xml` rather than retroactively justifying it; it can be re-added
+(with a proper entry here) if and when a real validation need shows up.
