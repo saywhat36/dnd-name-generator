@@ -1,18 +1,23 @@
 package com.dndnamegen.namegen.web;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.dndnamegen.namegen.favorite.FavoriteService;
+import com.dndnamegen.namegen.generation.PoolReplenishmentService;
 import com.dndnamegen.namegen.name.Gender;
 import com.dndnamegen.namegen.name.Name;
 import com.dndnamegen.namegen.name.NameService;
+import com.dndnamegen.namegen.name.NameSource;
 import com.dndnamegen.namegen.name.NameSourceFilter;
 import com.dndnamegen.namegen.name.Race;
 import com.dndnamegen.namegen.report.NameReportService;
@@ -41,6 +46,8 @@ class NameBrowserControllerTest {
 
     @MockBean private NameReportService nameReportService;
 
+    @MockBean private PoolReplenishmentService poolReplenishmentService;
+
     /**
      * @WebMvcTest auto-registers Filter beans, so the real SessionIdFilter runs in this
      * slice -- see FavoriteControllerTest for why a cookie (not a directly-set request
@@ -55,12 +62,16 @@ class NameBrowserControllerTest {
      * empty, so an unstubbed mock returning null would NPE inside the template's
      * favoritedNameIds.contains(...)/reportedNameIds.contains(...) calls. Defaults to "no
      * prior activity" for every test; the one test that cares about pre-disabled buttons
-     * overrides this.
+     * overrides this. Also defaults the pool cap high and "not currently generating" so
+     * existing tests (none of which stub these) don't need to know about the new
+     * generate-more feature's model attributes.
      */
     @BeforeEach
     void stubNoPriorSessionActivityByDefault() {
         when(favoriteService.getFavoritedNameIds(SESSION_ID)).thenReturn(Set.of());
         when(nameReportService.getReportedNameIds(SESSION_ID)).thenReturn(Set.of());
+        when(poolReplenishmentService.getPoolCapPerCombo()).thenReturn(20);
+        when(poolReplenishmentService.isReplenishing(any(), any())).thenReturn(false);
     }
 
     @Test
@@ -139,5 +150,96 @@ class NameBrowserControllerTest {
                         .param("gender", "FEMININE")
                         .param("source", "NOT_A_REAL_SOURCE"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void browse_should_ShowGenerateMoreButton_When_AiPoolIsBelowCapAndNotGenerating() throws Exception {
+        Name aiName = mock(Name.class);
+        when(aiName.getSource()).thenReturn(NameSource.AI_GENERATED);
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED))
+                .thenReturn(List.of(aiName));
+
+        mockMvc.perform(withSession(get("/browse")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "AI_GENERATED")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Generate 5 more AI names")));
+    }
+
+    @Test
+    void browse_should_HideGenerateMoreButton_When_SourceIsCuratedOnly() throws Exception {
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED)).thenReturn(List.of());
+
+        mockMvc.perform(withSession(get("/browse")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(not(containsString("Generate 5 more AI names"))));
+    }
+
+    @Test
+    void browse_should_HideGenerateMoreButton_When_AiPoolIsAtCap() throws Exception {
+        Name aiName = mock(Name.class);
+        when(aiName.getSource()).thenReturn(NameSource.AI_GENERATED);
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED))
+                .thenReturn(List.of(aiName, aiName));
+        when(poolReplenishmentService.getPoolCapPerCombo()).thenReturn(2);
+
+        mockMvc.perform(withSession(get("/browse")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "AI_GENERATED")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(not(containsString("Generate 5 more AI names"))));
+    }
+
+    @Test
+    void browse_should_ShowGeneratingIndicatorInsteadOfButton_When_ReplenishmentIsInFlight() throws Exception {
+        Name aiName = mock(Name.class);
+        when(aiName.getSource()).thenReturn(NameSource.AI_GENERATED);
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED))
+                .thenReturn(List.of(aiName));
+        when(poolReplenishmentService.isReplenishing(Race.ELF, Gender.FEMININE)).thenReturn(true);
+
+        mockMvc.perform(withSession(get("/browse")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "AI_GENERATED")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Generating more AI names")))
+                .andExpect(content().string(not(containsString("Generate 5 more AI names"))));
+    }
+
+    @Test
+    void generateMore_should_TriggerReplenishAndRenderBrowserFragment_When_Posted() throws Exception {
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED)).thenReturn(List.of());
+
+        mockMvc.perform(withSession(post("/browse/generate-more")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "AI_GENERATED")))
+                .andExpect(status().isOk());
+
+        verify(poolReplenishmentService).replenish(Race.ELF, Gender.FEMININE);
+    }
+
+    /**
+     * replenish(...) is @Async, so isReplenishing(...) reading the in-flight map
+     * immediately afterward in the same request thread would race the executor
+     * thread's own update to that map -- stubbing it false here (as it genuinely
+     * would be, this soon) and still asserting the polling indicator renders proves
+     * generateMore doesn't rely on that racy read for its own response.
+     */
+    @Test
+    void generateMore_should_ShowGeneratingIndicator_When_IsReplenishingHasNotYetFlippedTrue() throws Exception {
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED)).thenReturn(List.of());
+        when(poolReplenishmentService.isReplenishing(Race.ELF, Gender.FEMININE)).thenReturn(false);
+
+        mockMvc.perform(withSession(post("/browse/generate-more")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "AI_GENERATED")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Generating more AI names")))
+                .andExpect(content().string(not(containsString("Generate 5 more AI names"))));
     }
 }

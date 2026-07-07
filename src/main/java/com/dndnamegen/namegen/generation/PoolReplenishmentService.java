@@ -74,6 +74,21 @@ public class PoolReplenishmentService {
     }
 
     /**
+     * Whether a replenishment cycle is currently in flight for this combo --
+     * used by the manual "generate more" UI trigger to know when to stop
+     * polling for fresh results, regardless of whether the cycle that just
+     * finished actually inserted anything (pool-at-cap/budget-exhausted skips
+     * also clear this flag on completion).
+     */
+    public boolean isReplenishing(Race race, Gender gender) {
+        return inFlightCombos.containsKey(new ComboKey(race, gender));
+    }
+
+    public int getPoolCapPerCombo() {
+        return poolCapPerCombo;
+    }
+
+    /**
      * Triggers a replenishment attempt for one race/gender combo. Safe to call
      * from multiple concurrent requests below-threshold for the same combo --
      * only the first claims the in-flight lock and actually generates; the

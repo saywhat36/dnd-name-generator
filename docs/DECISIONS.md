@@ -1663,3 +1663,90 @@ actual use -- confirmed nothing in `src/main` or `src/test` references
 `jakarta.validation`, `@Valid`, or any Bean Validation annotation. Removed
 from `pom.xml` rather than retroactively justifying it; it can be re-added
 (with a proper entry here) if and when a real validation need shows up.
+
+## 2026-07-07: Manual "generate 5 more AI names" trigger, alongside the existing
+automatic threshold trigger
+User-reported gap: `NameService.getNames`'s automatic replenishment only fires
+while a combo's AI pool is below `app.pool-replenishment.replenish-threshold`
+(default 5, same as `batch-size`) -- so a fresh combo goes 0 -> 5 on first view,
+then the condition (`aiPoolSize < replenishThreshold`) is permanently false at
+exactly 5, even though `app.pool-replenishment.cap-per-combo` (default 20)
+allows further growth. Repeated clicks on the AI_GENERATED/BOTH source button
+kept showing the same 5 names indefinitely, with no way to get more short of
+manually reducing the stored count.
+
+Added a manual trigger instead of changing the automatic condition (e.g. to
+"below cap"), since always refilling toward the cap on every read would turn a
+cheap DB-only browse into a background LLM-call generator for combos nobody
+asked to grow further -- the user specifically wanted an explicit "give me
+more" action, not a bigger automatic default.
+
+**`POST /browse/generate-more`** (`NameBrowserController`) calls the exact same
+`PoolReplenishmentService.replenish(race, gender)` the automatic path already
+uses -- no new budget/cap/stampede logic was added, since the existing checks
+already live at the one place the LLM is actually called and are provider-
+agnostic (keyed on call count/pool size, not any specific model's own rate
+limiting). This means the manual trigger inherits the same cost protection
+regardless of which provider/model is configured behind `ChatClient`.
+
+**New `PoolReplenishmentService.isReplenishing(Race, Gender)`** exposes the
+existing in-flight stampede-guard map (`inFlightCombos`) as a read, and
+**`getPoolCapPerCombo()`** exposes the configured cap -- both needed by the
+controller to decide whether to render the "Generate 5 more" button (hidden
+once at cap, or while a cycle is already in flight, so it never renders as a
+button that would visibly do nothing) and whether to render the polling
+indicator.
+
+**Client-side polling, not synchronous wait.** Per the "never block a request
+on a live LLM call" rule, `generate-more` returns immediately (fire-and-forget,
+same as the automatic path). The re-rendered fragment includes a
+`generatingMore` flag; while true, an htmx element polls `GET /browse` every 2s
+and swaps the whole fragment. Once a replenishment cycle completes --
+successfully or not, including budget-exhausted/pool-at-cap skips and
+zero-yield generation attempts -- `isReplenishing` returns false, the polling
+element is no longer rendered, and polling stops naturally without any
+client-side timeout or attempt counter needed.
+
+**Verified against the real app and a live Gemini call** (`./mvnw
+spring-boot:run -Dspring-boot.run.profiles=local,gemini`, `docker compose`
+Postgres, real `GEMINI_API_KEY`), not just unit tests: cycled the ELF/FEMININE
+AI pool from 0 -> 5 (automatic) -> 10 -> 15 (manual clicks) -> confirmed the
+button disappears once at cap, and confirmed a zero-yield cycle (generation
+returned 0 new survivors after retries) still correctly cleared the
+`generatingMore` flag and re-showed the button rather than leaving the UI
+stuck on "Generating...". `NameBrowserControllerTest` additions and
+`PoolReplenishmentServiceTest`'s new `isReplenishing`/`getPoolCapPerCombo`
+tests hit the same pre-existing JDK 26/Mockito inline-mock-maker gap already
+documented above (`PoolReplenishmentServiceTest` mocks the concrete
+`NameGenerationService`); `./mvnw test-compile` confirms everything compiles,
+and the live-app verification above exercises the actual behavior these tests
+assert.
+
+## 2026-07-07: Caught in review of #49 -- generateMore forces generatingMore
+true rather than trusting isReplenishing(...) for its own response
+`PoolReplenishmentService.replenish(...)` is `@Async`, so its in-flight-map
+update (`inFlightCombos.putIfAbsent`) happens on the executor thread, not
+synchronously before the calling method returns. `NameBrowserController
+.generateMore` was calling `replenish(...)` then immediately populating the
+model via `isReplenishing(...)` in the same request thread -- a genuine race:
+the response to the very click that triggered a cycle could render
+`generatingMore=false` if the executor thread hadn't yet claimed the combo, so
+the polling indicator would never render and the user would see no feedback
+that anything happened (verified this reproduces reliably against the real
+app when hitting `POST /browse/generate-more` on a pool with no prior
+in-flight cycle).
+
+Fixed by having `generateMore` force `generatingMore=true` onto the model
+after calling `populateBrowser`, rather than trusting the racy read for this
+one response. This is correct, not a guess: `generate-more` only runs when the
+button that posted to it was visible, which index.html only renders when
+`!generatingMore` and the pool is below cap -- so by the time this endpoint is
+reached, a cycle has genuinely just been requested. Subsequent polls hit
+`GET /browse`, where `isReplenishing(...)` is read well after the async
+dispatch and is accurate. Regression test added:
+`generateMore_should_ShowGeneratingIndicator_When_IsReplenishingHasNotYetFlippedTrue`,
+which stubs `isReplenishing` to false (the genuinely-racy value) and asserts
+the indicator still renders. Re-verified against the real app (live Gemini
+call): the immediate response to a manual trigger on a fresh, never-triggered
+combo now reliably shows "Generating more AI names..." instead of
+intermittently omitting it.

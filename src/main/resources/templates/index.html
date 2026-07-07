@@ -58,6 +58,31 @@
             hx-swap="outerHTML"></button>
     </div>
 
+    <!-- Manual AI pool growth: the automatic below-threshold replenishment in
+         NameService.getNames only bootstraps a combo's AI pool up to
+         app.pool-replenishment.replenish-threshold, so once it reaches that resting
+         point nothing ever asks for more on its own. This button lets the user ask
+         for another batch, up to app.pool-replenishment.cap-per-combo, subject to the
+         same stampede guard/pool-cap/daily-budget protections PoolReplenishmentService
+         already enforces regardless of provider. Hidden once at cap or already
+         generating, so it never renders as a button that would visibly do nothing. -->
+    <div
+        class="toggle-group"
+        th:if="${selectedSource != T(com.dndnamegen.namegen.name.NameSourceFilter).CURATED and !generatingMore and aiPoolSize < aiPoolCap}">
+        <button
+            type="button"
+            th:attr="hx-post=@{/browse/generate-more(race=${selectedRace},gender=${selectedGender},source=${selectedSource})}"
+            hx-target="#browser"
+            hx-swap="outerHTML">Generate 5 more AI names</button>
+    </div>
+    <div
+        id="generating-indicator"
+        th:if="${generatingMore}"
+        th:attr="hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${selectedSource})}"
+        hx-trigger="every 2s"
+        hx-target="#browser"
+        hx-swap="outerHTML">Generating more AI names&hellip;</div>
+
     <ul>
         <li class="name-row" th:each="n : ${names}">
             <span th:text="${n.displayName}"></span>
