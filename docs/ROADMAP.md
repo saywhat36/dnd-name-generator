@@ -71,7 +71,7 @@ Status legend: not started / in progress / done
   "AI pool low" notice based on pool state, not error handling
 
 ### Week 5 -- Favoriting + reporting
-- [ ] `favorite/` package: add/remove/list, keyed on session_id,
+- [x] `favorite/` package: add/remove/list, keyed on session_id,
   `owner_id` column present but unused
 - [ ] Lazy insert-on-favorite for refinement-mode results:
   `AI_REFINED` source value, `generation_log_id` set, `ON CONFLICT`

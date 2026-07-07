@@ -892,6 +892,59 @@ test and already relied on elsewhere in this codebase.
 toggle yet" behavior identical to before this PR, since Week 6 (not this PR) is
 where that controller gets a real toggle.
 
+## 2026-07-07: `favorite/` package -- add/remove/list, first Week 5 slice
+First Week 5 slice, scoped to add/remove/list only per `docs/ROADMAP.md`.
+Lazy insert-on-favorite for `AI_REFINED` names, `report/`, and the manual
+FLAGGED-review flow are separate, later slices -- the first is blocked on
+the not-yet-built refinement/memory feature.
+
+**`Favorite` is the first entity this codebase JPA-`save()`s directly**,
+unlike `Name` (only ever read via JPA; writes go through `NameInsertDao`'s
+native path) or the batch-insert rows `NameInsertDao` itself writes. Gave it
+a real public constructor (`sessionId`, `nameId`) that sets
+`createdAt = Instant.now()` explicitly, since relying on the column's
+`DEFAULT now()` would mean Hibernate sends `NULL` for a `NOT NULL` column on
+insert. `nameId` is a plain `Long` FK column, matching the existing
+no-`@ManyToOne`-anywhere convention (e.g. `Name.generationLogId`).
+
+**`addFavorite` idempotency**: check `findBySessionIdAndNameId` first, return
+the existing row if present. A duplicate-insert race (two concurrent
+requests favoriting the same name for the same session) just throws a
+catchable `DataIntegrityViolationException` off the `(session_id, name_id)`
+unique constraint on a single-row `save()` -- caught, and the row the other
+request just inserted is re-read and returned. This is not the
+`NameInsertDao` batch-poisoning scenario recorded above ("Native insert path
+for pool writes, not JPA `saveAll`") -- that problem is specific to a batch
+of `ON CONFLICT DO NOTHING` inserts inside one transaction; a single JPA
+`save()` failing and being caught outside that transaction has no such
+issue. `removeFavorite` is idempotent for free -- a derived `deleteBy...`
+query naturally no-ops when nothing matches.
+
+**`listFavorites` re-orders `findAllById`'s result to match favorite order**
+(most recently favorited first) -- Spring Data's `findAllById` does not
+guarantee it preserves input order, so returning its result as-is would
+silently reorder a user's favorites list on unrelated JPA/driver behavior.
+
+**404 check lives in the controller, not the service.** `FavoriteController`
+calls `nameRepository.existsById(nameId)` directly and throws
+`ResponseStatusException(NOT_FOUND)` before calling `FavoriteService`,
+rather than having the service throw an HTTP-aware exception. No existing
+service-to-HTTP exception-translation convention exists in this codebase
+yet, so keeping this one check in the controller avoided introducing one for
+a single call site.
+
+**Session id read from `SessionIdFilter.REQUEST_ATTRIBUTE`** -- this is the
+first code that actually reads the attribute the filter has minted on every
+request since Foundations.
+
+Tests: plain-mock `FavoriteServiceTest` (no Spring context, matching
+`NameServiceTest`) and `@WebMvcTest` `FavoriteControllerTest` (matching
+`NameControllerTest`), including a regression test for the concurrent-insert
+race and for `findAllById`'s out-of-order return. Could not run `./mvnw
+test` locally -- same pre-existing JDK 26/Mockito inline-mock-maker gap
+documented above; confirmed via `./mvnw compile test-compile` that
+everything compiles cleanly.
+
 ## 2026-07-06: Week 6 htmx frontend brought forward; race/gender/source picker as
 button groups, not dropdowns
 Reordered ahead of Week 4/5 -- both are largely independent of the frontend
