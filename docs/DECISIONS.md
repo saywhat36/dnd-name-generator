@@ -1478,3 +1478,108 @@ Caught in review of #44, fixed in this PR:
   `Bandwidth.builder().capacity(capacity).refillGreedy(capacity,
   refillPeriod).build()` -- no behavior change, confirmed by rerunning
   `RateLimitFilterTest` locally (still 4/4 passing).
+
+## 2026-07-07: htmx favorite/report action buttons, final Week 6 slice --
+completes Phase 1's core Weeks 1-6
+Adds a Favorite and Report button per rendered name in `index.html`, wired to
+the existing `POST /favorites` and `POST /reports` endpoints
+(`FavoriteController`/`NameReportController`, both from Week 5). This was the
+last unchecked box in `docs/ROADMAP.md`'s Week 6 section.
+
+**Client-side-only feedback, no controller response-shape change.** Both
+endpoints already return no body (`201`, no content). Rather than changing
+them to return an HTML fragment for htmx to swap in, each button uses
+`hx-swap="none"` plus `hx-on::after-request="this.disabled=true;
+this.textContent='...'"` to self-update after a successful POST -- no new
+controller code, no new fragment. Considered returning a fragment instead
+(more consistent with `/browse`'s existing swap-a-fragment pattern), but that
+would touch `FavoriteController`/`NameReportController`'s response shape for
+a two-word text change no other caller needs. User confirmed this tradeoff
+explicitly before implementation.
+
+**Report fires with `reason=null`, no text input.** Matches the roadmap
+wording ("report action buttons," not "a moderation form") and
+`NameReportController`'s `reason` param is already optional. No new UI
+surface for a reason nothing yet consumes (the FLAGGED-review flow reads
+`name_reports` directly, per the Week 5 `report/` entry above).
+
+**Buttons reflect prior session state on page load** (pre-disabled
+"Favorited ✓"/"Reported ✓" if this session already acted on a name), which
+needed two new read paths:
+- `FavoriteRepository`/`NameReportRepository`: `findNameIdBySessionId(...)`,
+  returning ids only (`Set<Long>` after service-layer dedup), not full rows --
+  the browse page only needs membership per name id, unlike
+  `FavoriteService.listFavorites`'s existing ordered full-row read.
+- `FavoriteService.getFavoritedNameIds`/`NameReportService.getReportedNameIds`,
+  thin wrappers exposing that as a `Set<Long>`. First read method on
+  `NameReportService` beyond `reportName` -- deliberately still internal
+  (called only from `NameBrowserController`), not a new public listing
+  endpoint; the Week 5 `report/` entry's "no list endpoint" decision was
+  about *endpoints*, and stays true here.
+- `NameBrowserController.populateBrowser` now takes `HttpServletRequest` (to
+  read `SessionIdFilter.REQUEST_ATTRIBUTE`, matching how
+  `FavoriteController`/`NameReportController` already read session id) and
+  adds `favoritedNameIds`/`reportedNameIds` to the model alongside the
+  existing race/gender/source picker state.
+
+Buttons always starting unclicked (ignoring prior session state) was the
+simpler alternative -- rejected by explicit user choice in favor of this one,
+since both `addFavorite`/`reportName` are already idempotent and a stale
+"Favorite" button that silently no-ops on a second click would be a confusing
+UI regression relative to what the backend actually guarantees.
+
+**Bug found and fixed during manual verification, not by a review agent:**
+the derived query methods `findNameIdBySessionId` on both repositories
+initially used Spring Data's method-name derivation (no `@Query`). Running
+the app locally against real Postgres surfaced
+`QueryTypeMismatchException: Specified result type [java.lang.Long] did not
+match Query selection type [Favorite] - multiple selections` on the very
+first `/` page load -- Hibernate 6.5.3 was generating a full-entity select
+against a declared `List<Long>` return type for this specific derivation
+shape, despite `nameId` being an unambiguous single property. Compiling
+cleanly and the mocked service-layer tests both give zero signal on this,
+since the query is only ever built and executed by a real JPA provider.
+Fixed by switching both methods to an explicit `@Query("SELECT f.nameId FROM
+Favorite f WHERE f.sessionId = :sessionId")` (and the `NameReport`
+equivalent) -- re-verified by re-running the app and favoriting/reporting a
+real name end-to-end (see below). Not investigated further as a Spring
+Data/Hibernate version issue; the explicit `@Query` is strictly more
+predictable regardless of root cause.
+
+**Verified manually end-to-end**, not just via curl-ing HTML: started the app
+locally (`docker compose up -d`, `SESSION_COOKIE_SECURE=false ./mvnw
+spring-boot:run -Dspring-boot.run.profiles=local`), loaded `/` (buttons
+render unclicked), `POST /favorites?nameId=111` and `POST
+/reports?nameId=112` with a real session cookie (both `201`), then reloaded
+`/browse` and confirmed name 111 renders "Favorited ✓" pre-disabled (its
+Report button still live) and name 112 renders "Reported ✓" pre-disabled (its
+Favorite button still live) -- proving the new read path round-trips
+correctly against real data, not just that the template renders.
+
+**Tests**: `FavoriteServiceTest`/`NameReportServiceTest` gain
+`get{Favorited,Reported}NameIds` cases (empty and non-empty), plain-mock, no
+Spring context -- these ran locally and passed, unaffected by the JDK
+26/Mockito gap since neither test mocks a concrete class.
+`NameBrowserControllerTest` gains a `@MockBean` for `FavoriteService` and
+`NameReportService`, a `@BeforeEach` stubbing both to return empty sets by
+default (every render calls both regardless of whether the result list is
+empty, so an unstubbed mock returning `null` would NPE inside the template's
+`.contains(...)` calls), a new pre-disabled-buttons test, and every existing
+test updated to attach a real session cookie via the `withSession(...)`
+helper (matching `FavoriteControllerTest`'s established pattern -- `@WebMvcTest`
+auto-registers `SessionIdFilter`, so a directly-set request attribute would
+be silently overwritten). Could not run `@WebMvcTest` locally -- same
+pre-existing JDK 26/Mockito inline-mock-maker gap documented in prior
+entries (this controller test mocks the concrete `Name` class, same as the
+two known-broken `FavoriteServiceTest` cases); confirmed via `./mvnw compile
+test-compile` that everything compiles cleanly, and correctness was instead
+established via the manual end-to-end run described above, which exercises
+the exact same code path a passing `@WebMvcTest` would.
+
+**This completes Phase 1's core Week 1-6 roadmap.** Every Week 1-6 line in
+`docs/ROADMAP.md` is now checked. The only remaining unchecked items are
+explicitly out of scope for this multi-PR effort: Week 4 (provider
+switching, never requested for this effort) and the "Deferred within Phase 1
+(optional, after core weeks)" memory/conversational-refinement item, plus
+Phase 2 (auth) and Phase 3 (backstories/streaming), both already deferred by
+design per `docs/ARCHITECTURE.md`'s "Phase boundaries" section.

@@ -1,5 +1,6 @@
 package com.dndnamegen.namegen.report;
 
+import java.util.Set;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
@@ -38,5 +39,13 @@ public class NameReportService {
                     .findBySessionIdAndNameId(sessionId, nameId)
                     .orElseThrow(() -> e);
         }
+    }
+
+    /**
+     * Used by the browse page to mark already-reported names on initial render. Matches
+     * FavoriteService.getFavoritedNameIds's shape -- membership only, no ordering needed.
+     */
+    public Set<Long> getReportedNameIds(String sessionId) {
+        return Set.copyOf(nameReportRepository.findNameIdBySessionId(sessionId));
     }
 }
