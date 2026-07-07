@@ -44,9 +44,9 @@ Status legend: not started / in progress / done
 - [x] `generation_log` writes on every attempt, including failures
 
 ### Week 3 -- Pool + toggle
-- [ ] `PoolReplenishmentService`, `@Async`, threshold-triggered -- service
-  itself lands with this slice; the "threshold-triggered" half (NameService
-  deciding *when* to call it) is the next slice, alongside the toggle below
+- [x] `PoolReplenishmentService`, `@Async`, threshold-triggered -- service
+  itself landed in #32; the "threshold-triggered" half (NameService
+  deciding *when* to call it) landed in #35, alongside the toggle below
 - [x] Explicit executor config (`AsyncConfig`) -- do not rely on
   `SimpleAsyncTaskExecutor` defaults
 - [x] Explicit try/catch + `generation_log` write in `finally` --
