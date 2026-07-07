@@ -1041,3 +1041,73 @@ ELF/FEMININE/CURATED highlighted and real curated names, clicking a different
 combination (HALF_ORC/MASCULINE/BOTH) re-renders with exactly that
 combination's buttons highlighted and the right names, and the empty-state
 message renders correctly for a combo with no data (DRAGONBORN/CURATED).
+
+## 2026-07-07: `report/` package -- report-name endpoint, second Week 5 slice
+Second Week 5 slice, scoped to the report action only per `docs/ROADMAP.md`.
+The manual review flow that flips `names.status` to `FLAGGED` stays a
+separate, not-yet-built slice -- a report is a raw signal, not an automatic
+status change, per `docs/ARCHITECTURE.md`'s "`name_reports`" section.
+
+**Mirrors `favorite/`'s shape and idempotency pattern deliberately**, since
+`name_reports` has the same problem `favorites` does: a single-row JPA
+`save()`, guarded by a `(session_id, name_id)` unique constraint, with a
+duplicate-report race handled by catching `DataIntegrityViolationException`
+and re-reading the winner's row. `NameReportService.reportName` returns the
+existing row (and ignores the new `reason`) if this session already reported
+this name -- per `docs/ARCHITECTURE.md`: "without it, one user clicking
+report five times looks like five reports, which corrupts any future
+threshold-triggered auto-flagging."
+
+**Differences from `favorite/`, driven by the schema, not by choice:**
+`name_reports.session_id` is `NOT NULL` (unlike `favorites.session_id`,
+which is nullable pending `owner_id`), so `NameReport` has no `ownerId`
+field. `reason` is a nullable, freeform `varchar(256)` passed straight
+through from the request -- no validation added, since the roadmap item is
+just "writes to `name_reports`," not a moderation feature.
+
+**No list/remove endpoints.** Unlike favorites, there's no product need to
+let a session see or retract its own reports -- the roadmap only calls for
+the report action itself, and the future FLAGGED-review flow reads reports
+in aggregate (across sessions), not per-session.
+
+**`NameReportControllerTest` sets the session cookie in `SessionIdFilter`'s
+own format from the start** (a valid UUID, passed as a real
+`SessionIdFilter.COOKIE_NAME` cookie), rather than setting the request
+attribute directly -- the latter was found in review of #37 to be silently
+overwritten by the real `SessionIdFilter`, which `@WebMvcTest` auto-registers
+as a `Filter` bean.
+
+Tests: plain-mock `NameReportServiceTest` (no Spring context, matching
+`FavoriteServiceTest`) and `@WebMvcTest` `NameReportControllerTest` (matching
+`FavoriteControllerTest`), including a regression test for the
+concurrent-report race. Could not run `./mvnw test` locally -- same
+pre-existing JDK 26/Mockito inline-mock-maker gap documented above;
+confirmed via `./mvnw compile test-compile` that everything compiles
+cleanly.
+
+Caught in review of #38, fixed in this PR:
+
+- **An over-length `reason` would have surfaced as an unmapped 500, not a
+  400.** `name_reports.reason` is `VARCHAR(256)`; a longer value passed
+  through unvalidated would throw a DB-level "string data right truncation"
+  error on `save()`, which Spring's SQL exception translation maps to
+  `DataIntegrityViolationException` -- the same exception type
+  `NameReportService.saveNew`'s catch block interprets as a concurrent-report
+  race. Its re-query (`findBySessionIdAndNameId`) would then find nothing
+  (the insert never landed) and rethrow the *original* length-violation
+  exception unmapped. Fixed by validating length in
+  `NameReportController.normalizeReason` before calling the service, throwing
+  a clean `ResponseStatusException(BAD_REQUEST)` instead. Regression test:
+  `reportName_should_ReturnBadRequest_When_ReasonExceedsMaxLength`.
+- **Blank (`""` or whitespace-only) `reason` now normalizes to `null`**,
+  same method -- otherwise "no reason given" would have two different
+  representations in the same nullable column, which the not-yet-built
+  FLAGGED-review UI would eventually have to special-case. Regression test:
+  `reportName_should_TreatReasonAsNull_When_ReasonIsBlank`.
+
+One finding considered and deliberately not changed: `NameReportService.saveNew`
+and `FavoriteService.saveNew` (and `NameReportController`/`FavoriteController`'s
+`requireNameExists`/`sessionId` helpers) are near-identical. Not extracted into
+a shared helper -- only two occurrences exist, and this codebase's own
+convention favors "three similar lines... over a premature abstraction." Revisit
+if a third favorite/report-shaped feature package needs the same pattern.
