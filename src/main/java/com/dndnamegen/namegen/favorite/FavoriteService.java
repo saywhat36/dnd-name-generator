@@ -10,6 +10,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Add/remove/list favorites, keyed on session_id per docs/ARCHITECTURE.md
@@ -49,6 +50,12 @@ public class FavoriteService {
         }
     }
 
+    /**
+     * @Transactional here because deleteBySessionIdAndNameId is a derived delete query, which
+     * Spring Data requires to run inside a transaction (see NameService.flagName for the same
+     * pattern with an explicit @Modifying query).
+     */
+    @Transactional
     public void removeFavorite(String sessionId, Long nameId) {
         favoriteRepository.deleteBySessionIdAndNameId(sessionId, nameId);
     }
