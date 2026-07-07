@@ -4,6 +4,7 @@ import com.dndnamegen.namegen.name.Name;
 import com.dndnamegen.namegen.name.NameRepository;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -53,15 +54,18 @@ public class FavoriteService {
 
     /**
      * findAllById does not preserve input order, so the result is re-sorted to match
-     * favorite order (most recently favorited first).
+     * favorite order (most recently favorited first). Favorited name ids with no matching
+     * Name row (there is no delete path for Name today, but nothing rules one out later)
+     * are dropped rather than left as a null entry -- FavoriteController maps this list
+     * straight into NameResponse, which would NPE on a null Name otherwise.
      */
     public List<Name> listFavorites(String sessionId) {
-        List<Favorite> favorites = favoriteRepository.findBySessionIdOrderByCreatedAtDesc(sessionId);
+        List<Favorite> favorites = favoriteRepository.findBySessionIdOrderByCreatedAtDescIdDesc(sessionId);
         List<Long> orderedNameIds = favorites.stream().map(Favorite::getNameId).toList();
 
         Map<Long, Name> namesById =
                 nameRepository.findAllById(orderedNameIds).stream().collect(Collectors.toMap(Name::getId, Function.identity()));
 
-        return orderedNameIds.stream().map(namesById::get).toList();
+        return orderedNameIds.stream().map(namesById::get).filter(Objects::nonNull).toList();
     }
 }

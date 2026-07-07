@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.dndnamegen.namegen.name.Name;
 import com.dndnamegen.namegen.name.NameRepository;
 import com.dndnamegen.namegen.session.SessionIdFilter;
+import jakarta.servlet.http.Cookie;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,7 +25,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 @WebMvcTest(FavoriteController.class)
 class FavoriteControllerTest {
 
-    private static final String SESSION_ID = "session-1";
+    private static final String SESSION_ID = "11111111-1111-1111-1111-111111111111";
 
     @Autowired private MockMvc mockMvc;
 
@@ -32,8 +33,16 @@ class FavoriteControllerTest {
 
     @MockBean private NameRepository nameRepository;
 
+    /**
+     * @WebMvcTest auto-registers Filter beans, so the real SessionIdFilter runs in this slice.
+     * Setting the request attribute directly is not enough -- with no cookie present,
+     * SessionIdFilter mints its own random session id and overwrites the attribute before
+     * FavoriteController reads it. Supplying a cookie in the real SessionIdFilter's own
+     * format (a valid UUID) makes the filter recognize and pass through this session id
+     * instead of minting a new one.
+     */
     private static MockHttpServletRequestBuilder withSession(MockHttpServletRequestBuilder builder) {
-        return builder.requestAttr(SessionIdFilter.REQUEST_ATTRIBUTE, SESSION_ID);
+        return builder.cookie(new Cookie(SessionIdFilter.COOKIE_NAME, SESSION_ID));
     }
 
     @Test

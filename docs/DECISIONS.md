@@ -945,6 +945,57 @@ test` locally -- same pre-existing JDK 26/Mockito inline-mock-maker gap
 documented above; confirmed via `./mvnw compile test-compile` that
 everything compiles cleanly.
 
+Caught in review of #37, fixed in this PR:
+
+- **`FavoriteControllerTest` was asserting against a session id it didn't
+  actually control.** `@WebMvcTest` auto-registers `Filter` beans (documented
+  Spring Boot slice behavior), so the real `SessionIdFilter` runs inside the
+  test's MockMvc chain. With no cookie on the built request, the filter mints
+  its own random UUID and overwrites the `requestAttr` the test had set,
+  before `FavoriteController` ever reads it -- every `verify(favoriteService)`
+  call in that test class was checking against a session id the test never
+  actually produced. Fixed by attaching a real `SessionIdFilter.COOKIE_NAME`
+  cookie (a valid UUID, since the filter validates the cookie value as one
+  before trusting it) instead of setting the request attribute directly --
+  the filter now recognizes and passes the test's session id through instead
+  of minting its own.
+- **`listFavorites` could put a `null` into the returned list.** If a
+  favorited `nameId` had no matching row in `nameRepository.findAllById`,
+  `namesById::get` returned `null` for that entry with no filter --
+  `FavoriteController` maps this list straight into `NameResponse::from`,
+  which would NPE the whole `GET /favorites` response for that session.
+  There's no delete path for `Name` today, so this can't happen yet, but
+  nothing rules one out later. Filtered with `Objects::nonNull` after the
+  `map` rather than leaving it to whichever future path deletes a `Name` row
+  to notice.
+- **`findBySessionIdOrderByCreatedAtDesc` had no tiebreaker.** `createdAt` is
+  set client-side (`Instant.now()` in `Favorite`'s constructor, not the
+  column's `DEFAULT now()`), so two favorites added in quick succession for
+  the same session can land on the same `Instant` -- `ORDER BY created_at
+  DESC` alone gives no stable relative order between them. Added `id DESC` as
+  a secondary sort key (`findBySessionIdOrderByCreatedAtDescIdDesc`).
+
+Two more findings considered and deliberately not changed:
+
+- **`FavoriteController.addFavorite` checks `nameRepository.existsById`
+  before calling the service**, which is a redundant round trip given
+  `favorites.name_id`'s `NOT NULL REFERENCES names(id)` constraint would
+  reject an invalid id anyway. Kept as-is: the task requires a specific `404`
+  response for this case, and reliably distinguishing an FK violation from
+  the `(session_id, name_id)` unique-constraint violation already being
+  caught one layer down (`FavoriteService.saveNew`) inside one
+  `DataIntegrityViolationException` type is more fragile across JDBC drivers
+  than one extra `SELECT` on a write path that isn't hot.
+- **`listFavorites` issues two DB round trips** (`findBySessionIdOrder...`
+  then `findAllById`) plus an in-app re-order, rather than a single joined
+  query. `NameRepository`'s own doc comment on `findByRaceAndGenderAndStatusAndSourceIn`
+  cites the same "avoid two queries merged in application code" reasoning for
+  the CURATED/AI_GENERATED/BOTH toggle, so this isn't a clean precedent
+  match. Not changed in this PR -- a per-session favorites list is bounded
+  small and not a hot path, and a joined query would be a bigger change for
+  a first slice. Revisit if this list ever needs to scale past a handful of
+  rows per session.
+
 ## 2026-07-06: Week 6 htmx frontend brought forward; race/gender/source picker as
 button groups, not dropdowns
 Reordered ahead of Week 4/5 -- both are largely independent of the frontend

@@ -71,7 +71,7 @@ class FavoriteServiceTest {
     void listFavorites_should_ReturnNamesInFavoriteOrder_When_RepositoryReturnsThemOutOfOrder() {
         Favorite favoriteOfName2 = new Favorite("session-1", 2L);
         Favorite favoriteOfName1 = new Favorite("session-1", 1L);
-        when(favoriteRepository.findBySessionIdOrderByCreatedAtDesc("session-1"))
+        when(favoriteRepository.findBySessionIdOrderByCreatedAtDescIdDesc("session-1"))
                 .thenReturn(List.of(favoriteOfName2, favoriteOfName1));
 
         Name name1 = mock(Name.class);
@@ -89,11 +89,32 @@ class FavoriteServiceTest {
 
     @Test
     void listFavorites_should_ReturnEmptyList_When_SessionHasNoFavorites() {
-        when(favoriteRepository.findBySessionIdOrderByCreatedAtDesc("session-1")).thenReturn(List.of());
+        when(favoriteRepository.findBySessionIdOrderByCreatedAtDescIdDesc("session-1")).thenReturn(List.of());
         when(nameRepository.findAllById(List.of())).thenReturn(List.of());
 
         List<Name> result = favoriteService.listFavorites("session-1");
 
         assertThat(result).isEmpty();
+    }
+
+    /**
+     * A favorited nameId with no matching Name row (e.g. the Name was later removed by some
+     * future path) must be dropped, not surfaced as a null entry -- FavoriteController maps
+     * this list straight into NameResponse::from, which would NPE on a null Name.
+     */
+    @Test
+    void listFavorites_should_OmitEntry_When_FavoritedNameIdHasNoMatchingNameRow() {
+        Favorite favoriteOfMissingName = new Favorite("session-1", 99L);
+        Favorite favoriteOfName1 = new Favorite("session-1", 1L);
+        when(favoriteRepository.findBySessionIdOrderByCreatedAtDescIdDesc("session-1"))
+                .thenReturn(List.of(favoriteOfMissingName, favoriteOfName1));
+
+        Name name1 = mock(Name.class);
+        when(name1.getId()).thenReturn(1L);
+        when(nameRepository.findAllById(List.of(99L, 1L))).thenReturn(List.of(name1));
+
+        List<Name> result = favoriteService.listFavorites("session-1");
+
+        assertThat(result).containsExactly(name1);
     }
 }
