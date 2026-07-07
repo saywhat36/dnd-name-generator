@@ -151,4 +151,22 @@ class NameServiceTest {
         assertThat(elapsedMillis).isLessThan(100);
         assertThat(slowProviderCallFinished.await(5, TimeUnit.SECONDS)).isTrue();
     }
+
+    @Test
+    void flagName_should_ReturnTrue_When_NameExists() {
+        when(nameRepository.updateStatus(1L, NameStatus.FLAGGED)).thenReturn(1);
+
+        boolean result = nameService.flagName(1L);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void flagName_should_ReturnFalse_When_NameDoesNotExist() {
+        when(nameRepository.updateStatus(1L, NameStatus.FLAGGED)).thenReturn(0);
+
+        boolean result = nameService.flagName(1L);
+
+        assertThat(result).isFalse();
+    }
 }

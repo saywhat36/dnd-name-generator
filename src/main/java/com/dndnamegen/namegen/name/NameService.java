@@ -4,6 +4,7 @@ import com.dndnamegen.namegen.generation.PoolReplenishmentService;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Orchestrates the CURATED/AI_GENERATED/BOTH source toggle and the
@@ -53,6 +54,20 @@ public class NameService {
         }
 
         return names;
+    }
+
+    /**
+     * Manual review flow (docs/ROADMAP.md, Week 5): a human has decided this name should stop
+     * being served, and flips it out of the ACTIVE pool. This is a direct action on a specific
+     * name id, not derived from name_reports -- a report is a raw signal only (see
+     * docs/ARCHITECTURE.md's "name_reports" section), and there is no threshold-based
+     * auto-flagging in this codebase to wire this into. @Transactional here because
+     * NameRepository.updateStatus is a @Modifying query, which Spring Data requires to run
+     * inside a transaction. Returns false (caller maps to 404) if no name has this id.
+     */
+    @Transactional
+    public boolean flagName(Long nameId) {
+        return nameRepository.updateStatus(nameId, NameStatus.FLAGGED) > 0;
     }
 
     private static List<NameSource> toSources(NameSourceFilter filter) {
