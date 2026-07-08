@@ -41,7 +41,20 @@ public class WebSecurityConfig {
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(requestHandler))
-                .httpBasic(AbstractHttpConfigurer::disable);
+                .httpBasic(AbstractHttpConfigurer::disable)
+                // Slice 4: form login against DbUserDetailsService, auto-wired the same way the
+                // starter's AuthenticationManagerBuilder auto-detects any single UserDetailsService
+                // + PasswordEncoder bean pair -- no explicit DaoAuthenticationProvider bean needed
+                // since there's exactly one of each in this context. No .permitAll() calls below:
+                // anyRequest().permitAll() above already covers GET/POST /login and POST /logout,
+                // and route-level locking (requiring authentication for specific routes) is still
+                // out of scope for this slice.
+                .formLogin(form -> form.loginPage("/login"))
+                .logout(logout -> logout
+                        .logoutUrl("/logout")
+                        .logoutSuccessUrl("/login?logout")
+                        .deleteCookies("JSESSIONID")
+                        .invalidateHttpSession(true));
 
         return http.build();
     }

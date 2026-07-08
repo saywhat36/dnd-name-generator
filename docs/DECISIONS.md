@@ -1943,3 +1943,79 @@ Caught in automated review of #68, fixed in this PR:
   the original exception now propagates when the re-check finds no collision.
   `UserServiceTest` gained a case for this (`save()` fails for an unrelated reason -- the
   original exception must propagate, not get relabeled).
+
+## 2026-07-08: Login/logout + authenticated session (slice 4) -- form login, single hardcoded role
+Fourth and final slice of the security rollout's core auth flow: turns slice 3's
+account-creation flow into something a user can actually authenticate with. `DbUserDetailsService`,
+`WebSecurityConfig`'s new `formLogin`/`logout` config, `LoginController` (`GET /login` only), and
+`login.html`. `index.html`'s header now shows "Signed in as {username} · Log out" vs. "Log in /
+Register" via `sec:authorize`.
+
+**Form login chosen over a token-based scheme.** This is a server-rendered Thymeleaf app with no
+separate API client to hand a JWT to -- session cookies are the natural fit, and Spring Security's
+`formLogin` is the mechanism that requires the least new infrastructure on top of what's already
+here (CSRF, `CookieCsrfTokenRepository`, the `thymeleaf-extras-springsecurity6` dialect from slice
+3). `docs/ROADMAP.md`'s "Session or JWT-based auth" item is resolved as session-based for this
+reason, not left open for a future JWT swap.
+
+**`DbUserDetailsService` maps every account to one hardcoded `ROLE_USER` authority.** There is no
+roles table -- adding one now would be speculative, since nothing in the app yet distinguishes
+users by permission level. `ROLE_USER` exists only so `UserDetails.getAuthorities()` isn't empty;
+a roles table (and the migration/entity work it implies) is deferred until a real route or feature
+needs more than one authority to tell users apart, tracked as an explicit gap in
+`docs/ROADMAP.md`'s "Route-level security" item rather than silently assumed away.
+
+**Auto-wired `AuthenticationManager`, no explicit `DaoAuthenticationProvider` bean.** Spring
+Security's `InitializeUserDetailsManagerConfigurer` auto-detects the single `UserDetailsService`
+bean (`DbUserDetailsService`) and the single `PasswordEncoder` bean (already present from slice 2)
+and wires a `DaoAuthenticationProvider` from that pair on its own -- confirmed via the startup log
+line `Global AuthenticationManager configured with UserDetailsService bean with name
+dbUserDetailsService`. Registering the provider explicitly would just be restating configuration
+Spring Security already derives correctly from what's in the context; not done, per the same
+avoid-restating-the-obvious instinct that kept `WebSecurityConfig` free of a hand-rolled
+`AuthenticationManager` bean in earlier slices too.
+
+**Still `anyRequest().permitAll()` -- no route locking in this slice.** `formLogin`/`logout`'s own
+config calls no `.permitAll()` of their own, since the existing blanket `permitAll()` from slice 1
+already covers `GET`/`POST /login` and `POST /logout`. This slice is scoped to "can a user
+authenticate and see that they're authenticated," not "which routes now require it" -- the latter
+is `docs/ROADMAP.md`'s still-unchecked "Route-level security" item, deferred because there's no
+route yet whose behavior needs to differ for authenticated vs. anonymous users (favorites/reports
+are still session-scoped, not `owner_id`-scoped -- that migration is also still pending per
+`ROADMAP.md`).
+
+**`logoutSuccessUrl("/login?logout")`, `deleteCookies("JSESSIONID")`, `invalidateHttpSession(true)`.**
+Explicit rather than relying on defaults, so the login page can render a "you've been logged out"
+message the same way it already renders `?registered` and `?error` -- no flash-attribute
+infrastructure exists in this codebase (same rationale `RegistrationController` recorded), so query
+params are the mechanism for all three post-redirect messages on this one page.
+
+**The `namegen_session_id` cookie is untouched by login/logout, by construction, not by an
+explicit exclusion.** `SessionIdFilter` mints/reads that cookie independently of authentication
+state -- it has no knowledge of `Authentication` or the `HttpSession` Spring Security manages, so
+there was nothing to change here to keep the two coexisting. Verified manually rather than assumed:
+registered and logged in via `curl` with a cookie jar against the real app
+(`docker-compose up -d`, `SESSION_COOKIE_SECURE=false ./mvnw spring-boot:run
+-Dspring-boot.run.profiles=local`) -- confirmed `namegen_session_id`'s value is identical in the
+cookie jar before registration, after login, and after logout, while `JSESSIONID` and `XSRF-TOKEN`
+appear/rotate/disappear around it as expected. Also confirmed end-to-end: `GET /register` → `POST
+/register` (302 to `/login?registered`, message renders) → `POST /login` with correct credentials
+(302 to `/`, header shows "Signed in as Gandalf · Log out") → `GET /` header reflects
+`sec:authorize` correctly → `POST /logout` (302 to `/login?logout`, `JSESSIONID` cleared, message
+renders) → `POST /login` with a wrong password (302 to `/login?error`, "Incorrect username or
+password." renders, confirming rejection is a redirect, not framework 403 noise, once a valid CSRF
+token is attached to the request).
+
+**Testing.** `DbUserDetailsServiceTest` (mocked `UserRepository`, no Spring context) covers
+found/normalized-lookup/not-found. `LoginLogoutTest` (new, `config/` package, mirroring
+`WebSecurityConfigTest`'s pattern of proving global filter-chain behavior against an arbitrary
+`@WebMvcTest` slice) uses `spring-security-test`'s `formLogin()`/`logout()` request builders against
+`LoginController` with `DbUserDetailsService` mocked and the real `PasswordEncoder` bean autowired
+to produce a matching hash -- covers successful login, `..._should_RejectLogin_When_PasswordWrong`,
+an unknown-username rejection, and logout's redirect + unauthenticated state. Hits the same
+pre-existing local JDK 26/Mockito inline-mock-maker gap documented since slice 1
+(`Mockito cannot mock this class: class com.dndnamegen.namegen.user.DbUserDetailsService`) for the
+three Spring-context tests in `LoginLogoutTest` specifically -- `DbUserDetailsServiceTest`'s plain
+mocks run and pass locally with no such gap. `./mvnw test-compile` confirms everything compiles;
+the manual `curl` verification above is what actually exercises the `LoginLogoutTest` assertions in
+this environment.
