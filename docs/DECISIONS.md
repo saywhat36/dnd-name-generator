@@ -1807,8 +1807,7 @@ same pre-existing local JDK 26/Mockito inline-mock-maker gap documented earlier 
 this log, so `./mvnw test-compile` plus the live-app verification above are what
 actually confirm correctness here, not a local `./mvnw test` run.
 
-## 2026-07-08: Users schema + password hashing (slice 2) -- persistence primitives, no
-endpoints
+## 2026-07-08: Users schema + password hashing (slice 2) -- persistence primitives, no endpoints
 Phase 2 of the security rollout (session-based auth) needs somewhere to store accounts
 and a way to hash passwords before any login/register endpoint exists. This slice adds
 exactly those primitives -- `V4__create_users.sql`, the `User` entity + `UserRepository`,
@@ -1843,7 +1842,10 @@ FK on the previously-bare `favorites.owner_id`. V1 declared `owner_id BIGINT` wi
 foreign key because `users` did not exist yet; V4 adds `fk_favorites_owner` now that it
 does. No existing rows populate `owner_id` (favoriting is still session-scoped), so the
 `ALTER TABLE ... ADD CONSTRAINT` validates against an empty column and can't fail on
-legacy data.
+legacy data. Paired with `idx_favorites_owner_id` on the referencing column (caught in
+review): Postgres auto-indexes only the referenced PK, so without this the FK check on
+user deletion and any `users`->`favorites` join would seq-scan `favorites` -- the same
+reason V1 added `idx_favorites_name_id` for the `name_id` FK.
 
 `UserRepositoryIT` (Testcontainers, matching `NameRepositoryIT`) covers the insert +
 normalized-username derivation and the cross-casing unique violation. As with the other

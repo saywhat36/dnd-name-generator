@@ -12,3 +12,8 @@ CREATE TABLE users (
 -- table did not exist yet -- now that it does, wire up the referential integrity.
 ALTER TABLE favorites
     ADD CONSTRAINT fk_favorites_owner FOREIGN KEY (owner_id) REFERENCES users (id);
+
+-- Postgres auto-indexes the referenced side (users.id PK) but never the referencing
+-- column, so back owner_id explicitly -- same precedent as idx_favorites_name_id in V1.
+-- Without it, users->favorites joins and the FK check on user deletion seq-scan favorites.
+CREATE INDEX idx_favorites_owner_id ON favorites (owner_id);

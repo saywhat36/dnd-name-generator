@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Objects;
 
 @Entity
 @Table(name = "users")
@@ -40,9 +41,12 @@ public class User {
      * consults the DB default, so the defaults would only ever apply to hand-written SQL.
      */
     public User(String username, String passwordHash) {
+        if (username == null || username.isBlank()) {
+            throw new IllegalArgumentException("username must not be null or blank");
+        }
         this.username = username;
         this.usernameNorm = normalizeUsername(username);
-        this.passwordHash = passwordHash;
+        this.passwordHash = Objects.requireNonNull(passwordHash, "passwordHash must not be null");
         this.enabled = true;
         this.createdAt = Instant.now();
     }
@@ -52,10 +56,11 @@ public class User {
      * uq_users_username_norm unique constraint. Deliberately simpler than
      * DeduplicationService.normalize -- trim + lowercase, no Unicode NFC pass, which is
      * overkill for usernames. Kept static so lookup callers can normalize a query input
-     * the same way rows were stored.
+     * the same way rows were stored -- the requireNonNull guards that path too, so a null
+     * turns into a clear message rather than an NPE deep inside trim().
      */
     public static String normalizeUsername(String username) {
-        return username.trim().toLowerCase(Locale.ROOT);
+        return Objects.requireNonNull(username, "username must not be null").trim().toLowerCase(Locale.ROOT);
     }
 
     public Long getId() {
