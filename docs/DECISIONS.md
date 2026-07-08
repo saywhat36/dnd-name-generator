@@ -1750,3 +1750,59 @@ the indicator still renders. Re-verified against the real app (live Gemini
 call): the immediate response to a manual trigger on a fresh, never-triggered
 combo now reliably shows "Generating more AI names..." instead of
 intermittently omitting it.
+
+## 2026-07-08: Security baseline (slice 1) -- Spring Security + CSRF added with no
+user-facing behavior change
+Phase 2 of the wider security rollout is session-based auth over JWT: the app is
+same-origin and server-rendered (Thymeleaf + htmx), so cookie sessions avoid the
+token-storage problems JWT-in-the-browser brings, at the cost of needing CSRF
+protection -- which this slice adds.
+
+`spring-boot-starter-security` is now on the classpath with a single
+`SecurityFilterChain` (`WebSecurityConfig`) that keeps every route
+anonymous-accessible (`.anyRequest().permitAll()`); route locking is deferred to a
+later slice once login exists. HTTP Basic and the default login page are disabled so
+adding the starter doesn't introduce a login prompt anywhere.
+
+CSRF is kept on (not disabled), and htmx is wired to it now so every later POST
+(login, register, logout, favorites, reports, generate-more) inherits working CSRF
+for free instead of needing per-feature wiring later. The specific pairing that makes
+this work -- `CookieCsrfTokenRepository.withHttpOnlyFalse()` plus a
+`CsrfTokenRequestAttributeHandler` with `setCsrfRequestAttributeName(null)` -- is the
+Spring Security 6 footgun documented in the class Javadoc: the `CsrfToken` is
+resolved lazily by default, so unless something reads it eagerly, the `XSRF-TOKEN`
+cookie is never written and htmx has nothing to echo back in the `X-XSRF-TOKEN`
+header its `htmx:configRequest` listener sets.
+
+Verified by running the app locally (`SESSION_COOKIE_SECURE=false`) against the real
+Postgres container: `GET /` writes the `XSRF-TOKEN` cookie, `POST /favorites` without
+the header 403s, and the same request with `X-XSRF-TOKEN` set from that cookie
+succeeds (201, then a matching `DELETE` succeeds with 204) -- confirming existing
+htmx flows keep working end to end, not just against a mocked slice.
+
+Caught in review: the starter's default filter chain also attaches
+`Cache-Control: no-cache, no-store, max-age=0, must-revalidate`, `Pragma: no-cache`,
+`X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY` to every response --
+not something the earlier "zero observable behavior change" framing above accounted
+for, since local verification only checked status codes and the CSRF cookie, not
+headers. Left as-is rather than stripped back to match pre-slice-1 responses: there's
+no static asset caching this app relies on, and disallowing framing is a sane default
+it never needed to opt out of. Documented on `WebSecurityConfig`'s Javadoc directly so
+this doesn't get re-discovered as a surprise later. Also dropped a redundant
+`.requestMatchers("/actuator/health").permitAll()` line that had no effect (the
+following `.anyRequest().permitAll()` already covered it) and read as if health had
+special treatment it doesn't have yet -- would have been actively misleading once
+`anyRequest()` becomes `authenticated()` in the route-locking slice, since someone
+could assume health was already carved out by this line.
+
+`WebSecurityConfigTest` asserts this at the `@WebMvcTest` slice level directly
+against an existing POST route. Adding `spring-boot-starter-security` also pulls
+Spring Security's autoconfiguration into every existing `@WebMvcTest` (they don't
+declare `@Import` of unrelated config, but the security filter chain is global), so
+the existing POST/DELETE tests in `FavoriteControllerTest`, `NameReportControllerTest`,
+`NameControllerTest`, and `NameBrowserControllerTest` needed
+`.with(csrf())` (from `spring-security-test`) added to keep passing -- these were
+previously implicitly relying on CSRF not existing yet. All of the above hit the
+same pre-existing local JDK 26/Mockito inline-mock-maker gap documented earlier in
+this log, so `./mvnw test-compile` plus the live-app verification above are what
+actually confirm correctness here, not a local `./mvnw test` run.

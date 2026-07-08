@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -36,7 +37,7 @@ class NameReportControllerTest {
      * enough.
      */
     private static MockHttpServletRequestBuilder withSession(MockHttpServletRequestBuilder builder) {
-        return builder.cookie(new Cookie(SessionIdFilter.COOKIE_NAME, SESSION_ID));
+        return builder.cookie(new Cookie(SessionIdFilter.COOKIE_NAME, SESSION_ID)).with(csrf());
     }
 
     @Test

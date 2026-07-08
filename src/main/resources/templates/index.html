@@ -7,6 +7,15 @@
     <!-- htmx via CDN for this minimal browse-only slice -- see docs/DECISIONS.md
          for why a webjar dependency isn't warranted yet. -->
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script>
+        // Echo the XSRF-TOKEN cookie (written by CookieCsrfTokenRepository) back as a
+        // header on every htmx request, since htmx doesn't do this automatically and the
+        // app doesn't render a <form> whose hidden field htmx could otherwise pick up.
+        document.addEventListener('htmx:configRequest', (e) => {
+            const m = document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]+)/);
+            if (m) e.detail.headers['X-XSRF-TOKEN'] = decodeURIComponent(m[1]);
+        });
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
