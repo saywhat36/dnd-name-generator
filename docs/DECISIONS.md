@@ -1855,3 +1855,91 @@ confirmed the way the V3 seed entry established: applying V1 -> V4 against a thr
 `uq_users_username_norm` exist, a cross-casing duplicate `username_norm` is rejected, and
 `fk_favorites_owner` rejects a `favorites.owner_id` that points at no user. `./mvnw
 test-compile` confirms the Java + test sources build.
+
+## 2026-07-08: Registration endpoint (slice 3) -- POST /register, no login yet
+Third slice of the security rollout: turn slice 2's persistence primitives into an
+actual account-creation flow. `UserService.register`, `RegistrationController`
+(`GET`/`POST /register`), and `register.html`. Login is deliberately out of scope --
+the success redirect target (`/login?registered`) does not resolve yet, matching the
+same "build the primitive before the thing that consumes it" sequencing slice 2 used
+for `users`/password hashing before any endpoint existed.
+
+**Registration flow.** `existsByUsernameNorm` is a fast-path precheck, not the actual
+duplicate guard -- it's racy under two concurrent registrations for the same username,
+same as `FavoriteService.addFavorite`'s `findBySessionIdAndNameId` check. The `save()`
+call is wrapped in the identical `DataIntegrityViolationException` catch
+`FavoriteService.saveNew` uses for its own check-then-act race. The two diverge on what
+happens next, though: `FavoriteService`'s loser re-reads and returns the winner's row,
+because favoriting is idempotent and returning the existing row is correct. Registration
+isn't idempotent that way -- handing the race loser back the winner's *account* would be
+a serious bug, not a benign idempotency shortcut. So both the precheck rejection and the
+race-losing `DataIntegrityViolationException` funnel into the same
+`DuplicateUsernameException`, which `RegistrationController` catches and turns into a
+re-rendered form with an error, never a fabricated success.
+
+**Password policy source.** `app.auth.min-password-length` (default 8) and
+`app.auth.min-username-length`/`max-username-length` (default 3/64, the latter matching
+`users.username`'s `VARCHAR(64)`) follow the same externalized-`@Value`-with-a-default
+convention `QualityGateService` established for `app.quality-gate.*`, rather than
+hardcoding thresholds in `RegistrationController` or reaching for Bean Validation
+annotations -- there's no other `@Valid`/`jakarta.validation` usage anywhere in this
+codebase yet, and introducing it for one form felt like a bigger convention change than
+this slice warranted. No `max-password-length` -- BCrypt silently truncates at 72 bytes,
+which is an encoder-level property to be aware of, not a policy this layer should reject
+against. Username charset (`^[A-Za-z0-9_-]+$`) is deliberately narrower than
+`QualityGateService`'s Unicode-aware name pattern: usernames are login identifiers that
+show up in URLs and logs, where ASCII-only avoids lookalike-character confusables --
+generated fantasy names have no such constraint.
+
+**CSRF via `thymeleaf-extras-springsecurity6`.** Not previously on the classpath.
+`register.html`'s `<form th:action="@{/register}">` gets its hidden CSRF field injected
+automatically by the `SpringSecurityDialect` this artifact registers -- no `${_csrf}`
+reference anywhere in the template. This is a different mechanism from slice 1's htmx
+`X-XSRF-TOKEN` header wiring (`index.html`'s `htmx:configRequest` listener): htmx's
+approach only works for JS-initiated requests reading the `XSRF-TOKEN` cookie, whereas a
+plain server-rendered `<form method="post">` submission needs the token as a request
+parameter instead, which is exactly what the dialect provides.
+
+Verified end-to-end against a real Postgres container (`docker-compose up -d`,
+`SESSION_COOKIE_SECURE=false ./mvnw spring-boot:run -Dspring-boot.run.profiles=local`):
+`GET /register` renders the form with a working CSRF token; `POST /register` with a new
+username/password 302s to `/login?registered` and the row lands in `users` with a
+`{bcrypt}`-prefixed hash; re-submitting the same username (any casing) re-renders the
+form with "That username is already taken."; a too-short password re-renders with the
+length error; and a `POST /register` with no CSRF token 403s. Confirmed by querying
+`users` directly via `psql` inside the container.
+
+Tests: `UserServiceTest` (mocked repo/encoder -- new-registration success, precheck
+duplicate rejection, and the concurrent-registration race returning
+`DuplicateUsernameException` instead of a raw constraint violation) and `@WebMvcTest`
+`RegistrationControllerTest` (form render, successful redirect, each validation failure
+message, the duplicate-username re-render, and a CSRF-missing 403). Same pre-existing
+local JDK 26/Mockito inline-mock-maker gap documented in slice 1 blocks `./mvnw test`
+here too (reproduced against these two new test classes specifically, not just the
+already-known offenders) -- `./mvnw test-compile` confirms both compile, and the manual
+end-to-end verification above is what actually exercises the behavior these tests assert
+in isolation.
+
+Caught in automated review of #68, fixed in this PR:
+
+- **Untrimmed username reached persistence.** `RegistrationController.validate` checked a
+  trimmed copy of the username, but `register()` passed the original, untrimmed
+  `form.username()` through to `UserService`. Whitespace-padded input (including an
+  embedded newline -- a log-injection surface, since usernames show up in URLs/logs)
+  slipped the charset check trimming removed, and a value padded past 64 chars with
+  surrounding spaces could pass the trimmed length check yet still overflow
+  `VARCHAR(64)` on save. Fixed by trimming once at the top of `register()` and threading
+  that single trimmed value through both `validate()` and `UserService.register()`.
+  Verified against the live app: a whitespace-padded username now persists trimmed
+  (confirmed via `psql`), and a username still too long after trimming renders the
+  length-validation error rather than reaching `save()` at all.
+- **`UserService.register`'s catch treated every `DataIntegrityViolationException` as the
+  username collision.** The javadoc cited `FavoriteService.saveNew` as precedent, but that
+  method re-reads the row and only concludes a collision once it's confirmed one -- this
+  catch skipped that step and would have misreported any other constraint failure (e.g.
+  the `VARCHAR(64)` overflow above, or a future constraint on `users`) as "that username
+  is already taken." Fixed by re-checking `existsByUsernameNorm` inside the catch before
+  concluding a collision, matching `FavoriteService`'s confirm-before-concluding shape;
+  the original exception now propagates when the re-check finds no collision.
+  `UserServiceTest` gained a case for this (`save()` fails for an unrelated reason -- the
+  original exception must propagate, not get relabeled).

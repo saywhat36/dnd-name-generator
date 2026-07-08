@@ -43,6 +43,13 @@
             <artifactId>spring-boot-starter-thymeleaf</artifactId>
         </dependency>
         <dependency>
+            <!-- SpringSecurityDialect: auto-injects the CSRF hidden field into any
+                 form with th:action, without the template needing to reference
+                 the csrf token itself; register.html relies on this. -->
+            <groupId>org.thymeleaf.extras</groupId>
+            <artifactId>thymeleaf-extras-springsecurity6</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-docker-compose</artifactId>
             <scope>runtime</scope>

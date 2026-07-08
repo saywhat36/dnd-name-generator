@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Register &ndash; D&amp;D Name Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+    <style>
+        :root{
+            --paper:#EFEDE6;
+            --ink:#141310;
+            --muted:#5f5a50;
+            --line:rgba(20,19,16,.16);
+            --sans:"Archivo",system-ui,sans-serif;
+            --serif:"Instrument Serif",Georgia,serif;
+        }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{
+            background:var(--paper);
+            color:var(--ink);
+            font-family:var(--sans);
+            font-size:16px;
+            line-height:1.4;
+            -webkit-font-smoothing:antialiased;
+        }
+        a{color:inherit}
+        .wrap{padding-inline:clamp(1.25rem,4vw,4rem)}
+        header.nav{padding-block:1.1rem;font-size:.78rem;letter-spacing:.16em;text-transform:uppercase}
+        main{max-width:26rem;margin-inline:auto;padding-block:3rem}
+        h1{font-family:var(--serif);font-weight:400;font-size:2.4rem;margin-bottom:1.5rem}
+        label{display:block;font-size:.85rem;margin-block:1rem .35rem}
+        input{
+            width:100%;
+            padding:.6rem .75rem;
+            border:1px solid var(--line);
+            background:#fff;
+            font:inherit;
+            color:var(--ink);
+        }
+        input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+        button[type="submit"]{
+            margin-top:1.5rem;
+            width:100%;
+            padding:.7rem;
+            background:var(--ink);
+            color:var(--paper);
+            border:none;
+            font:inherit;
+            font-weight:500;
+            cursor:pointer;
+        }
+        .error{
+            margin-top:1rem;
+            padding:.6rem .75rem;
+            border:1px solid var(--ink);
+            font-size:.9rem;
+        }
+        .hint{color:var(--muted);font-size:.8rem;margin-top:.3rem}
+        .login-link{display:block;margin-top:1.25rem;font-size:.85rem;color:var(--muted)}
+    </style>
+</head>
+<body>
+
+<header class="nav wrap">
+    <a href="/"><span>D&amp;D</span></a>
+</header>
+
+<main class="wrap">
+    <h1>Create an account</h1>
+
+    <p class="error" th:if="${error}" th:text="${error}"></p>
+
+    <form th:action="@{/register}" method="post">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" th:value="${form.username()}" autocomplete="username" required />
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="new-password" required />
+
+        <button type="submit">Register</button>
+    </form>
+
+    <a class="login-link" href="/login">Already have an account? Log in</a>
+</main>
+
+</body>
+</html>

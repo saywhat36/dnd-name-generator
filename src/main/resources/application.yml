@@ -47,6 +47,15 @@ app:
     # SESSION_COOKIE_SECURE=false in your local environment/.env to persist the
     # session cookie across requests.
     secure: ${SESSION_COOKIE_SECURE:true}
+  auth:
+    # Registration-time username/password policy.
+    min-username-length: 3
+    # Matches users.username's VARCHAR(64) column (V4__create_users.sql).
+    max-username-length: 64
+    # No max here -- BCrypt silently truncates input past 72 bytes, but
+    # that's an encoder-level property, not something this policy needs
+    # to enforce as a rejection.
+    min-password-length: 8
   quality-gate:
     min-length: 2
     max-length: 30
