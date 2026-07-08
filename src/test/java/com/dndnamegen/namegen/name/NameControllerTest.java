@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -78,7 +79,7 @@ class NameControllerTest {
     void flagName_should_ReturnNoContent_When_NameExists() throws Exception {
         when(nameService.flagName(1L)).thenReturn(true);
 
-        mockMvc.perform(post("/names/1/flag")).andExpect(status().isNoContent());
+        mockMvc.perform(post("/names/1/flag").with(csrf())).andExpect(status().isNoContent());
 
         verify(nameService).flagName(1L);
     }
@@ -87,6 +88,6 @@ class NameControllerTest {
     void flagName_should_ReturnNotFound_When_NameDoesNotExist() throws Exception {
         when(nameService.flagName(1L)).thenReturn(false);
 
-        mockMvc.perform(post("/names/1/flag")).andExpect(status().isNotFound());
+        mockMvc.perform(post("/names/1/flag").with(csrf())).andExpect(status().isNotFound());
     }
 }
