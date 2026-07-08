@@ -4,6 +4,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.crypto.factory.PasswordEncoderFactories;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
@@ -42,5 +44,16 @@ public class WebSecurityConfig {
                 .httpBasic(AbstractHttpConfigurer::disable);
 
         return http.build();
+    }
+
+    /**
+     * Delegating encoder stores hashes with an id prefix ({@code {bcrypt}...}), so the
+     * algorithm travels with each hash and can be migrated per-user later without a schema
+     * change -- the reason password_hash is VARCHAR(255) rather than sized to bare bcrypt's
+     * 60 chars. Encodes new passwords with bcrypt (the current factory default).
+     */
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 }
