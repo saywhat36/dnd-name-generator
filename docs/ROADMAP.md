@@ -109,8 +109,11 @@ Status legend: not started / in progress / done
   `AI_REFINED`) only via the lazy insert-on-favorite path.
 
 ## Phase 2 -- Authentication (separate skill track, deferred)
-- [ ] `users` table, password hashing
-- [ ] Login/register endpoints
+- [x] `users` table, password hashing
+- [x] Register endpoint (`POST /register` + `register.html`); login still
+  pending, so the post-registration redirect target (`/login?registered`)
+  doesn't resolve yet
+- [ ] Login endpoint
 - [ ] Session or JWT-based auth
 - [ ] Route-level security
 - [ ] Add `(owner_id, name_id)` unique constraint on `favorites`
