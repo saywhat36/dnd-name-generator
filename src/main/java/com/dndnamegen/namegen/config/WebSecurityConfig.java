@@ -10,9 +10,16 @@ import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 
 /**
  * Slice 1 of the security rollout: wire up Spring Security and CSRF without changing
- * any observable behaviour. Every route stays anonymous-accessible -- route locking
+ * any user-facing behaviour. Every route stays anonymous-accessible -- route locking
  * (login required, per-route authorization) is deferred to a later slice. This class
  * exists purely so htmx's POST/DELETE requests keep working once CSRF protection is on.
+ *
+ * <p>Not fully invisible, though: the starter's default filter chain also attaches
+ * {@code Cache-Control: no-cache, no-store, max-age=0, must-revalidate}, {@code Pragma:
+ * no-cache}, {@code X-Content-Type-Options: nosniff}, and {@code X-Frame-Options: DENY}
+ * to every response. These are intentionally left as-is rather than stripped back to
+ * match pre-slice-1 behaviour -- there's no static asset caching to preserve here, and
+ * disallowing framing is a reasonable default this app never needed to opt out of.
  */
 @Configuration
 public class WebSecurityConfig {
@@ -28,9 +35,7 @@ public class WebSecurityConfig {
         // the cookie is always present for htmx's configRequest listener to echo back.
         requestHandler.setCsrfRequestAttributeName(null);
 
-        http.authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/actuator/health").permitAll()
-                        .anyRequest().permitAll())
+        http.authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll())
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(requestHandler))

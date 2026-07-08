@@ -1751,8 +1751,8 @@ call): the immediate response to a manual trigger on a fresh, never-triggered
 combo now reliably shows "Generating more AI names..." instead of
 intermittently omitting it.
 
-## 2026-07-08: Security baseline (slice 1) -- Spring Security + CSRF added with zero
-observable behavior change
+## 2026-07-08: Security baseline (slice 1) -- Spring Security + CSRF added with no
+user-facing behavior change
 Phase 2 of the wider security rollout is session-based auth over JWT: the app is
 same-origin and server-rendered (Thymeleaf + htmx), so cookie sessions avoid the
 token-storage problems JWT-in-the-browser brings, at the cost of needing CSRF
@@ -1779,6 +1779,21 @@ Postgres container: `GET /` writes the `XSRF-TOKEN` cookie, `POST /favorites` wi
 the header 403s, and the same request with `X-XSRF-TOKEN` set from that cookie
 succeeds (201, then a matching `DELETE` succeeds with 204) -- confirming existing
 htmx flows keep working end to end, not just against a mocked slice.
+
+Caught in review: the starter's default filter chain also attaches
+`Cache-Control: no-cache, no-store, max-age=0, must-revalidate`, `Pragma: no-cache`,
+`X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY` to every response --
+not something the earlier "zero observable behavior change" framing above accounted
+for, since local verification only checked status codes and the CSRF cookie, not
+headers. Left as-is rather than stripped back to match pre-slice-1 responses: there's
+no static asset caching this app relies on, and disallowing framing is a sane default
+it never needed to opt out of. Documented on `WebSecurityConfig`'s Javadoc directly so
+this doesn't get re-discovered as a surprise later. Also dropped a redundant
+`.requestMatchers("/actuator/health").permitAll()` line that had no effect (the
+following `.anyRequest().permitAll()` already covered it) and read as if health had
+special treatment it doesn't have yet -- would have been actively misleading once
+`anyRequest()` becomes `authenticated()` in the route-locking slice, since someone
+could assume health was already carved out by this line.
 
 `WebSecurityConfigTest` asserts this at the `@WebMvcTest` slice level directly
 against an existing POST route. Adding `spring-boot-starter-security` also pulls
