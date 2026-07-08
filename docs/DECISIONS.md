@@ -1919,3 +1919,27 @@ here too (reproduced against these two new test classes specifically, not just t
 already-known offenders) -- `./mvnw test-compile` confirms both compile, and the manual
 end-to-end verification above is what actually exercises the behavior these tests assert
 in isolation.
+
+Caught in automated review of #68, fixed in this PR:
+
+- **Untrimmed username reached persistence.** `RegistrationController.validate` checked a
+  trimmed copy of the username, but `register()` passed the original, untrimmed
+  `form.username()` through to `UserService`. Whitespace-padded input (including an
+  embedded newline -- a log-injection surface, since usernames show up in URLs/logs)
+  slipped the charset check trimming removed, and a value padded past 64 chars with
+  surrounding spaces could pass the trimmed length check yet still overflow
+  `VARCHAR(64)` on save. Fixed by trimming once at the top of `register()` and threading
+  that single trimmed value through both `validate()` and `UserService.register()`.
+  Verified against the live app: a whitespace-padded username now persists trimmed
+  (confirmed via `psql`), and a username still too long after trimming renders the
+  length-validation error rather than reaching `save()` at all.
+- **`UserService.register`'s catch treated every `DataIntegrityViolationException` as the
+  username collision.** The javadoc cited `FavoriteService.saveNew` as precedent, but that
+  method re-reads the row and only concludes a collision once it's confirmed one -- this
+  catch skipped that step and would have misreported any other constraint failure (e.g.
+  the `VARCHAR(64)` overflow above, or a future constraint on `users`) as "that username
+  is already taken." Fixed by re-checking `existsByUsernameNorm` inside the catch before
+  concluding a collision, matching `FavoriteService`'s confirm-before-concluding shape;
+  the original exception now propagates when the re-check finds no collision.
+  `UserServiceTest` gained a case for this (`save()` fails for an unrelated reason -- the
+  original exception must propagate, not get relabeled).

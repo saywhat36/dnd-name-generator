@@ -52,15 +52,33 @@ class UserServiceTest {
      * callers, one wins the insert, the loser's save() throws off uq_users_username_norm.
      * Unlike favorites, the loser can't be handed the winner's row (that would be someone
      * else's account), so this must surface as DuplicateUsernameException rather than the
-     * raw DataIntegrityViolationException.
+     * raw DataIntegrityViolationException. The post-catch existsByUsernameNorm re-check
+     * (see UserService.register) is what confirms the collision -- stubbed false-then-true
+     * to model "didn't exist at precheck time, does exist now that the winner landed".
      */
     @Test
     void register_should_ThrowDuplicateUsernameException_When_ConcurrentRegistrationRaceViolatesUniqueConstraint() {
-        when(userRepository.existsByUsernameNorm("gandalf")).thenReturn(false);
+        when(userRepository.existsByUsernameNorm("gandalf")).thenReturn(false).thenReturn(true);
         when(passwordEncoder.encode("hunter2!!")).thenReturn("{bcrypt}encoded");
         when(userRepository.save(any(User.class))).thenThrow(new DataIntegrityViolationException("dup"));
 
         assertThatThrownBy(() -> userService.register("Gandalf", "hunter2!!"))
                 .isInstanceOf(DuplicateUsernameException.class);
+    }
+
+    /**
+     * Caught in review: the original catch treated every DataIntegrityViolationException as
+     * the username collision. If the re-check finds no colliding row -- some other
+     * constraint failed instead -- the original exception must propagate rather than being
+     * misreported to the user as "that username is already taken."
+     */
+    @Test
+    void register_should_PropagateOriginalException_When_SaveFailsForAReasonOtherThanUsernameCollision() {
+        when(userRepository.existsByUsernameNorm("gandalf")).thenReturn(false);
+        when(passwordEncoder.encode("hunter2!!")).thenReturn("{bcrypt}encoded");
+        DataIntegrityViolationException notAUsernameCollision = new DataIntegrityViolationException("some other constraint");
+        when(userRepository.save(any(User.class))).thenThrow(notAUsernameCollision);
+
+        assertThatThrownBy(() -> userService.register("Gandalf", "hunter2!!")).isSameAs(notAUsernameCollision);
     }
 }

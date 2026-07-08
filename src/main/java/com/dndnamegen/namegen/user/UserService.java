@@ -23,6 +23,13 @@ public class UserService {
      * check-then-act race, except here the loser can't just return the winner's row (that
      * would hand back someone else's account) -- it surfaces as DuplicateUsernameException
      * instead, same as the precheck's fast-path rejection.
+     *
+     * <p>The catch re-checks existsByUsernameNorm before concluding the violation was the
+     * username collision, the same confirm-before-concluding shape FavoriteService.saveNew
+     * uses (it re-reads the row rather than assuming its own explanation). Caught in review:
+     * without this, any other constraint failure on the same save() -- e.g. a VARCHAR(64)
+     * overflow if a caller ever bypasses RegistrationController's length check -- would be
+     * misreported to the user as "that username is already taken" instead of propagating.
      */
     public User register(String username, String rawPassword) {
         String usernameNorm = User.normalizeUsername(username);
@@ -32,7 +39,10 @@ public class UserService {
         try {
             return userRepository.save(new User(username, passwordEncoder.encode(rawPassword)));
         } catch (DataIntegrityViolationException e) {
-            throw new DuplicateUsernameException(username, e);
+            if (userRepository.existsByUsernameNorm(usernameNorm)) {
+                throw new DuplicateUsernameException(username, e);
+            }
+            throw e;
         }
     }
 }

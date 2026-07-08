@@ -49,10 +49,15 @@ public class RegistrationController {
 
     @PostMapping("/register")
     public String register(@ModelAttribute("form") RegisterForm form, Model model) {
-        String error = validate(form);
+        // Trimmed once here so the same value is what gets validated (charset/length) and
+        // what gets persisted -- previously validate() checked a trimmed copy while
+        // register() below was handed the raw, untrimmed input, so padding whitespace could
+        // slip the charset check and still land in the stored username. Caught in review.
+        String username = form.username() == null ? "" : form.username().trim();
+        String error = validate(username, form.password());
         if (error == null) {
             try {
-                userService.register(form.username(), form.password());
+                userService.register(username, form.password());
                 return "redirect:/login?registered";
             } catch (DuplicateUsernameException e) {
                 error = "That username is already taken.";
@@ -60,20 +65,19 @@ public class RegistrationController {
         }
         // Password is dropped on re-render (never echoed back into the form), username
         // is kept so the user isn't forced to retype it after a validation/duplicate error.
-        model.addAttribute("form", new RegisterForm(form.username(), ""));
+        model.addAttribute("form", new RegisterForm(username, ""));
         model.addAttribute("error", error);
         return "register";
     }
 
-    private String validate(RegisterForm form) {
-        String username = form.username() == null ? "" : form.username().trim();
+    private String validate(String username, String password) {
         if (username.length() < minUsernameLength || username.length() > maxUsernameLength) {
             return "Username must be between " + minUsernameLength + " and " + maxUsernameLength + " characters.";
         }
         if (!ALLOWED_USERNAME_CHARACTERS.matcher(username).matches()) {
             return "Username may only contain letters, numbers, underscores, and hyphens.";
         }
-        if (form.password() == null || form.password().length() < minPasswordLength) {
+        if (password == null || password.length() < minPasswordLength) {
             return "Password must be at least " + minPasswordLength + " characters.";
         }
         return null;
