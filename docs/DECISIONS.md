@@ -1806,3 +1806,52 @@ previously implicitly relying on CSRF not existing yet. All of the above hit the
 same pre-existing local JDK 26/Mockito inline-mock-maker gap documented earlier in
 this log, so `./mvnw test-compile` plus the live-app verification above are what
 actually confirm correctness here, not a local `./mvnw test` run.
+
+## 2026-07-08: Users schema + password hashing (slice 2) -- persistence primitives, no endpoints
+Phase 2 of the security rollout (session-based auth) needs somewhere to store accounts
+and a way to hash passwords before any login/register endpoint exists. This slice adds
+exactly those primitives -- `V4__create_users.sql`, the `User` entity + `UserRepository`,
+and a `PasswordEncoder` bean -- and deliberately stops there. No controller, no
+`UserDetailsService`, no route locking; those land in the endpoint slice.
+
+`username_norm` unique, not `username`. Uniqueness is enforced on a normalized
+(trim + lowercase) mirror column, so `Gandalf` and `gandalf` collide rather than
+coexisting as separate accounts -- the same store-the-normalized-form idea `names`
+uses for `normalized_name`. Kept simpler than `DeduplicationService.normalize` on
+purpose: trim + `toLowerCase(Locale.ROOT)` only, no Unicode NFC pass. NFC matters for
+free-text fantasy names where visually identical glyphs must dedupe; usernames are a
+narrower, mostly-ASCII space where it buys little and would only surprise. The
+normalization lives as a static `User.normalizeUsername` so a later lookup can
+normalize its query input the same way rows were written. `username` keeps the
+as-entered casing for display; `username_norm` is purely the collision key.
+
+Constructor sets `createdAt = Instant.now()` and `enabled = true` in Java rather than
+relying on the column DEFAULTs -- the same Hibernate gotcha `Favorite` documents: on
+INSERT Hibernate sends whatever the field holds and never consults the DB default, so a
+field left unset would write NULL/false regardless of the `DEFAULT` clause. The DEFAULTs
+stay in the DDL for hand-written SQL / future non-JPA writers.
+
+Delegating password encoder (`PasswordEncoderFactories.createDelegatingPasswordEncoder()`),
+not a bare `BCryptPasswordEncoder`. It stores an algorithm id prefix with each hash
+(`{bcrypt}$2a$...`), so the algorithm travels per-row and can be migrated user-by-user
+later without a schema change -- the reason `password_hash` is `VARCHAR(255)` rather than
+sized to bare bcrypt's 60 chars. Bean added to the existing `WebSecurityConfig` from
+slice 1 rather than a new config class.
+
+FK on the previously-bare `favorites.owner_id`. V1 declared `owner_id BIGINT` with no
+foreign key because `users` did not exist yet; V4 adds `fk_favorites_owner` now that it
+does. No existing rows populate `owner_id` (favoriting is still session-scoped), so the
+`ALTER TABLE ... ADD CONSTRAINT` validates against an empty column and can't fail on
+legacy data. Paired with `idx_favorites_owner_id` on the referencing column (caught in
+review): Postgres auto-indexes only the referenced PK, so without this the FK check on
+user deletion and any `users`->`favorites` join would seq-scan `favorites` -- the same
+reason V1 added `idx_favorites_name_id` for the `name_id` FK.
+
+`UserRepositoryIT` (Testcontainers, matching `NameRepositoryIT`) covers the insert +
+normalized-username derivation and the cross-casing unique violation. As with the other
+`*IT`s, this won't run against the local Docker-socket/`ryuk` setup, so correctness was
+confirmed the way the V3 seed entry established: applying V1 -> V4 against a throwaway
+`postgres:16-alpine` container via `psql` -- migrations apply cleanly, `users` and
+`uq_users_username_norm` exist, a cross-casing duplicate `username_norm` is rejected, and
+`fk_favorites_owner` rejects a `favorites.owner_id` that points at no user. `./mvnw
+test-compile` confirms the Java + test sources build.
