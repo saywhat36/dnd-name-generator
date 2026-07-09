@@ -49,15 +49,21 @@
         </tr>
         </thead>
         <tbody>
-        <!-- Actions column is intentionally empty -- approve/reject land in a later PR
-             (see docs/ROADMAP.md, Phase 2.5 PR 6). This slice is read-only. -->
+        <!-- Actions column filled with approve/reject forms (PR 6) -->
         <tr th:each="s : ${submissions}">
             <td th:text="${s.displayName}"></td>
             <td th:text="${s.race}"></td>
             <td th:text="${s.gender}"></td>
             <td th:text="${s.submitterUsername}"></td>
             <td th:text="${s.createdAt}"></td>
-            <td class="actions"></td>
+            <td class="actions">
+                <form th:action="@{/admin/submissions/{id}/approve(id=${s.submissionId})}" method="post">
+                    <button type="submit">Approve</button>
+                </form>
+                <form th:action="@{/admin/submissions/{id}/reject(id=${s.submissionId})}" method="post">
+                    <button type="submit">Reject</button>
+                </form>
+            </td>
         </tr>
         <tr th:if="${submissions.isEmpty()}">
             <td class="empty" colspan="6">No pending submissions.</td>
