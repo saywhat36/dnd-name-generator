@@ -2540,9 +2540,12 @@ submission already exists. A concurrent duplicate that races past the pre-check 
 `uq_submissions_pending` (the partial index from PR 1) and its `DataIntegrityViolationException` is
 caught and remapped to the same `409`, exactly as `NameReportService.saveNew` handles its
 unique-constraint race. The controller bounds `displayName` (blank -> `400`, `> 128` chars -> `400`)
-before the DB, for the same reason `NameReportController` bounds `reason`: an over-length value would
-otherwise surface as a `DataIntegrityViolationException` the service's catch block would misread as a
-concurrent-submission race and mis-report as a `409`.
+before the DB -- but unlike `NameReportController.MAX_REASON_LENGTH` (whose `reason` param bypasses
+the quality gate entirely, making that guard the only length check), this one is defense-in-depth,
+not the primary guard: `QualityGateService.passesQualityGate` already rejects anything over
+`app.quality-gate.max-length` (30 by default) with a `400` first. The
+`DataIntegrityViolationException`-misread-as-`409` scenario this guard is modeled on only actually
+happens here if `max-length` is ever configured above 128. Caught in review of #76.
 
 **Testing.** `NameSubmissionServiceTest` (Mockito) covers gate-pass-saves, gate-fail-`400`,
 existing-live-name-`409`, existing-pending-`409`, and the concurrent-`DataIntegrityViolationException`

@@ -15,11 +15,12 @@ import org.springframework.web.server.ResponseStatusException;
 public class NameSubmissionController {
 
     /**
-     * Matches name_submissions.display_name's VARCHAR(128) column. Rejected here as a 400 rather
-     * than left to the DB -- an over-length value would otherwise throw a
-     * DataIntegrityViolationException that NameSubmissionService's catch block would misinterpret
-     * as a concurrent-submission race (its uq_submissions_pending remap), returning a misleading
-     * 409 for what is really a bad request. Same reasoning as NameReportController.MAX_REASON_LENGTH.
+     * Matches name_submissions.display_name's VARCHAR(128) column. Defense-in-depth, not the
+     * primary length guard: under default config, QualityGateService.passesQualityGate already
+     * rejects anything over app.quality-gate.max-length (30 by default) with a 400 before this is
+     * reached, so the DataIntegrityViolationException-misread-as-409 scenario that motivates
+     * NameReportController.MAX_REASON_LENGTH (whose reason param bypasses the quality gate
+     * entirely) only actually applies here if max-length is ever configured above 128.
      */
     private static final int MAX_DISPLAY_NAME_LENGTH = 128;
 
