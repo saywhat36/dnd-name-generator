@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reported names &middot; D&amp;D Name Generator</title>
+    <style>
+        :root{
+            --paper:#EFEDE6;
+            --ink:#141310;
+            --muted:#5f5a50;
+            --line:rgba(20,19,16,.16);
+            --sans:"Archivo",system-ui,sans-serif;
+        }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.4}
+        a{color:inherit}
+        .wrap{padding:clamp(1.25rem,4vw,4rem)}
+        h1{font-size:1.6rem;font-weight:600;margin-bottom:.25rem}
+        .back{display:inline-block;margin-bottom:1.5rem;font-size:.85rem;color:var(--muted)}
+        table{width:100%;border-collapse:collapse;margin-top:1rem}
+        th,td{text-align:left;padding:.6rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
+        th{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+        .reasons{color:var(--muted);font-size:.85rem}
+        .actions form{display:inline}
+        .actions button{
+            appearance:none;background:none;border:1px solid var(--line);border-radius:4px;
+            font:inherit;font-size:.75rem;padding:.3rem .6rem;margin-right:.4rem;cursor:pointer;
+        }
+        .actions button:hover{background:var(--ink);color:var(--paper)}
+        .empty{color:var(--muted);padding-block:2rem}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <span sec:authorize="hasRole('ADMIN')">
+        <a class="back" th:href="@{/}">&larr; Back to name generator</a>
+    </span>
+    <h1>Reported names</h1>
+    <p class="reasons">Names with at least one report, worst-offenders-first.</p>
+
+    <table>
+        <thead>
+        <tr>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Reports</th>
+            <th>Sample reasons</th>
+            <th>Actions</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="r : ${reports}">
+            <td th:text="${r.displayName}"></td>
+            <td th:text="${r.status}"></td>
+            <td th:text="${r.reportCount}"></td>
+            <td class="reasons" th:text="${#strings.listJoin(r.reasonSamples, '; ')}"></td>
+            <td class="actions">
+                <form th:action="@{/admin/names/{id}/flag(id=${r.nameId})}" method="post">
+                    <button type="submit">Flag</button>
+                </form>
+                <form th:action="@{/admin/names/{id}/reject(id=${r.nameId})}" method="post">
+                    <button type="submit">Reject</button>
+                </form>
+                <form th:action="@{/admin/names/{id}/unflag(id=${r.nameId})}" method="post">
+                    <button type="submit">Unflag</button>
+                </form>
+            </td>
+        </tr>
+        <tr th:if="${reports.isEmpty()}">
+            <td class="empty" colspan="5">No reported names.</td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+</body>
+</html>

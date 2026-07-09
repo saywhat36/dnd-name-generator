@@ -2446,3 +2446,44 @@ generate-more CTA are absent, and the login prompt is present, for `withSession(
 against the existing AI-pool-below-cap fixture shape). Manual verification: `curl -XPOST
 /favorites` (with a CSRF token, no session auth) still 401s/redirects exactly as it did before
 this slice, confirming the template change didn't touch the actual enforcement.
+
+## 2026-07-09: Slice 9 -- admin reported-names review
+
+**`AdminReportController` fills in the `/admin/**` placeholder from slice 7.** `GET
+/admin/reports` renders a plain server-rendered table (not htmx -- this is a low-traffic operator
+screen, not the public browse page, so there's no product reason to match its fragment-swap
+interaction model) of reported names, worst-offenders-first, with a few sample reasons per name.
+`POST /admin/names/{id}/flag`, `.../reject`, and `.../unflag` flip status and redirect back to
+`GET /admin/reports` (PRG, so a page refresh never re-submits an action). Both the filter-chain
+`hasRole("ADMIN")` rule (already in place since slice 7) and a per-method
+`@PreAuthorize("hasRole('ADMIN')")` gate every route here -- belt-and-braces, matching every other
+mutating controller in this codebase.
+
+**Reuses `NameService.flagName`, doesn't reimplement the status flip.** That method (Week 5's
+manual-review flow) already does exactly what the admin "flag" action needs; this slice adds a new,
+admin-only caller of it, not a second implementation. `rejectName`/`unflagName` are new methods
+added alongside it on `NameService`, same shape, same underlying `NameRepository.updateStatus`
+call, just a different target `NameStatus`.
+
+**Aggregate query lives on `NameReportRepository`, not a new repository.** `findReportedNameSummaries()`
+is an ad-hoc `join Name n on n.id = r.nameId` (Hibernate 6 supports this without a mapped
+`@ManyToOne`; `NameReport` deliberately has none, see its own Javadoc) grouped by name, returning a
+`ReportedNameSummary` projection (nameId/displayName/status/reportCount). `findReasonSamples(nameId,
+Pageable)` fetches a capped, most-recent-first sample of reasons per name. `AdminReportService`
+(new `admin` package) combines the two into `ReportedNameView` rows for the template -- kept
+separate from `NameReportService` since that class's existing scope is identity-keyed
+report/favorite-shaped operations, not admin aggregation.
+
+**Becoming an admin stays out of the UI, on purpose.** No self-serve role change endpoint exists or
+is planned for this slice -- promoting an account is `UPDATE users SET role='ADMIN' WHERE
+username_norm='...'` run by hand, or a seed migration for a known operator account. This isn't a
+gap to fill later; a role escalation path reachable from the product surface is exactly the kind of
+thing this app has no product need for and no review process to safely gate.
+
+**Testing.** `AdminReportControllerTest`: `reports_should_Return403_When_UserRole`,
+`reports_should_Render_When_AdminRole`, `flag_should_SetStatusFlagged_When_Admin`. Unlike every
+earlier `@WebMvcTest` in this codebase, this one needs `@Import(WebSecurityConfig.class)`
+explicitly -- it's the first slice test that has to distinguish role-based authorization from plain
+authentication, and nothing about `@WebMvcTest`'s auto-detection guarantees that distinction (every
+earlier route only ever needed to tell authenticated apart from anonymous). `NameServiceTest`
+gained matching `rejectName`/`unflagName` cases mirroring the existing `flagName` ones.

@@ -89,10 +89,10 @@ public class WebSecurityConfig {
                                 new AntPathRequestMatcher("/favorites/*", "DELETE"),
                                 new AntPathRequestMatcher("/reports", "POST"))
                         .authenticated()
-                        // Placeholder: no /admin/** controller exists yet (slice 9 fills it in),
-                        // but the role plumbing (users.role, DbUserDetailsService's ROLE_ mapping,
-                        // see slice 6) is already in place, so the route rule can land ahead of
-                        // the controller.
+                        // Slice 9: AdminReportController now serves this (role plumbing --
+                        // users.role, DbUserDetailsService's ROLE_ mapping -- was already in
+                        // place since slice 6). This rule predates the controller (was a
+                        // placeholder), unchanged now that one exists.
                         .requestMatchers(new AntPathRequestMatcher("/admin/**"))
                         .hasRole("ADMIN")
                         // Everything else (POST /logout, any route not listed above) defaults to

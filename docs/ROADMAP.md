@@ -150,6 +150,12 @@ Status legend: not started / in progress / done
   name under two different sessions pre-login~~ -- **moot**: favorites
   require login outright now, so there are no pre-login/session-keyed
   favorites to backfill or claim (see `DECISIONS.md`)
+- [x] Admin reported-names review (slice 9, see `DECISIONS.md`):
+  `AdminReportController` fills in the `/admin/**` placeholder --
+  `GET /admin/reports` (worst-offenders-first table) and
+  `POST /admin/names/{id}/flag|reject|unflag`, all `hasRole("ADMIN")`.
+  Reuses `NameService.flagName` rather than reimplementing the status
+  flip. No self-serve admin promotion -- out-of-band SQL only, by design
 
 ## Phase 3 -- Backstories + streaming (deferred)
 - [ ] Decide backstory persistence model (shared/cached on the name vs.
