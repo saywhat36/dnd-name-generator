@@ -341,6 +341,7 @@
                 <button
                     type="button"
                     class="act icon-btn"
+                    sec:authorize="isAuthenticated()"
                     th:classappend="${favoritedNameIds.contains(n.id)} ? 'is-active' : ''"
                     th:attr="data-add-url=@{/favorites(nameId=${n.id})},
                              data-remove-url=@{/favorites/{id}(id=${n.id})},
@@ -363,6 +364,7 @@
                 <button
                     type="button"
                     class="act icon-btn"
+                    sec:authorize="isAuthenticated()"
                     th:classappend="${reportedNameIds.contains(n.id)} ? 'is-active' : ''"
                     th:disabled="${reportedNameIds.contains(n.id)}"
                     title="Report"
@@ -391,6 +393,7 @@
              generating, so it never renders as a button that would visibly do nothing. -->
         <div
             class="more"
+            sec:authorize="isAuthenticated()"
             th:if="${selectedSource != T(com.dndnamegen.namegen.name.NameSourceFilter).CURATED and !generatingMore and aiPoolSize < aiPoolCap}">
             <button
                 type="button"
@@ -402,11 +405,20 @@
         <div
             id="generating-indicator"
             class="more conjuring"
+            sec:authorize="isAuthenticated()"
             th:if="${generatingMore}"
             th:attr="hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${selectedSource})}"
             hx-trigger="every 2s"
             hx-target="#browser"
             hx-swap="outerHTML"><span class="spin" aria-hidden="true">※</span> Conjuring <em>five more</em>&hellip;</div>
+        <!-- Anonymous counterpart to the favorite/report/generate-more affordances above --
+             all three require authentication (route-level security + @PreAuthorize, see
+             WebSecurityConfig/NameBrowserController), so this is UI-layer defense-in-depth
+             over that server-side enforcement, not a substitute for it (see docs/DECISIONS.md,
+             slice 8). -->
+        <div class="more" sec:authorize="!isAuthenticated()">
+            <a class="cta" th:href="@{/login}">Log in <em>to favorite, report, or generate new names</em><span class="mark" aria-hidden="true">※</span></a>
+        </div>
     </section>
 </div>
 </main>
