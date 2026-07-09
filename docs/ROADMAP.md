@@ -157,6 +157,26 @@ Status legend: not started / in progress / done
   Reuses `NameService.flagName` rather than reimplementing the status
   flip. No self-serve admin promotion -- out-of-band SQL only, by design
 
+## Phase 2.5 -- User-submitted names (moderation queue)
+Logged-in users propose names; they enter a PENDING queue; an admin
+approves (name becomes live and everyone-visible) or rejects. Built as a
+series of small PRs, each independently releasable.
+- [x] PR 1 -- schema + domain foundation: `name_submissions` table (V7),
+  `NameSubmission` entity, `SubmissionStatus`, empty repository,
+  Testcontainers repo IT. No endpoints yet. Uses a partial unique index
+  (`WHERE status = 'PENDING'`) for "one open submission per name/race/gender",
+  not a composite UNIQUE including status (see `DECISIONS.md`). V8 also
+  backfills the long-missing `HALF_ORC` value into the `names`/`generation_log`
+  race CHECKs
+- [ ] PR 2 -- submit endpoint (`POST /submissions`, authenticated): reuse
+  `QualityGateService`, soft duplicate check, `409` on collision
+- [ ] PR 3 -- submit UI on the browse page (htmx, authenticated-only)
+- [ ] PR 4 -- admin queue read side (`GET /admin/submissions`, `hasRole('ADMIN')`)
+- [ ] PR 5 -- `USER_SUBMITTED` `NameSource` + serving-path visibility
+  (grouped with CURATED as human-authored), no writer yet
+- [ ] PR 6 -- approve/reject actions: native insert into `names`
+  (`USER_SUBMITTED`/`ACTIVE`, `ON CONFLICT DO NOTHING`) + submission status flip
+
 ## Phase 3 -- Backstories + streaming (deferred)
 - [ ] Decide backstory persistence model (shared/cached on the name vs.
   per-favorite/per-user) before building -- this changes the schema
