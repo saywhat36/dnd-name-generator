@@ -52,4 +52,15 @@ public class QualityGateService {
                 && ALLOWED_CHARACTERS.matcher(trimmed).matches()
                 && !blocklist.contains(trimmed.toLowerCase(Locale.ROOT));
     }
+
+    /**
+     * Exposed so the submit-a-name form (NameBrowserController) can set its client-side
+     * {@code maxlength} from the actual configured value rather than a hardcoded guess --
+     * caught in review of #77, a stale hardcoded 128 (matching name_submissions.display_name's
+     * column width, not this gate) silently let a 31-128 char submission reach the server only
+     * to be rejected by passesQualityGate with no client-side feedback.
+     */
+    public int getMaxLength() {
+        return maxLength;
+    }
 }

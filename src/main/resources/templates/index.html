@@ -201,8 +201,14 @@
             padding:.3rem 0;
         }
         .submit-input:focus{border-bottom-color:var(--ink)}
-        .submit-confirmation{margin-top:.6rem;font-size:.85rem;color:var(--muted)}
-        .submit-confirmation em{font-family:var(--serif);font-style:italic;color:var(--ink)}
+        .submit-feedback{margin-top:.6rem;font-size:.85rem;color:var(--muted)}
+        .submit-feedback em{font-family:var(--serif);font-style:italic;color:var(--ink)}
+        /* error state matches the bordered-box convention login.html/register.html use for
+           .error, not a new color -- this design system stays monochrome. */
+        .submit-feedback.is-error{
+            color:var(--ink);border:1px solid var(--ink);
+            padding:.5rem .75rem;max-width:24rem;
+        }
 
         /* footer */
         footer{margin-top:clamp(4rem,12vh,8rem);border-top:1px solid var(--line)}
@@ -432,33 +438,57 @@
              presentational -- POST /submissions (landed in PR 2) already enforces auth,
              the quality gate, and duplicate checks server-side; this is just the form.
              hx-swap="none" + hx-on::after-request mirrors the report button's inline
-             success handler (see above): on success, clear the input and reveal the
+             success handler (see above): on success, clear the input and reveal a
              confirmation line rather than swapping any content in. The CSRF header is
              attached for free by the htmx:configRequest listener in <head>, same as every
-             other htmx request on this page -- no manual token handling needed. -->
+             other htmx request on this page -- no manual token handling needed.
+
+             maxlength is bound to submissionMaxLength (QualityGateService's real
+             app.quality-gate.max-length, exposed via NameBrowserController), not hardcoded --
+             caught in review of #77: a stale 128 (the VARCHAR column width, not the actual
+             gate) let a 31-128 char name reach the server only to be silently rejected.
+
+             Non-2xx responses are not silently swallowed either (also review of #77): the
+             quality-gate 400 and the duplicate-name/duplicate-pending 409 are both things a
+             user will realistically hit, so the handler reads event.detail.xhr.status and
+             shows a distinct message for each rather than leaving the form looking broken. -->
         <div class="more submit-name" sec:authorize="isAuthenticated()">
             <form
                 id="submit-name-form"
                 class="submit-form"
                 th:attr="hx-post=@{/submissions(race=${selectedRace},gender=${selectedGender})}"
                 hx-swap="none"
-                hx-on::after-request="if(event.detail.successful){
-                    this.reset();
-                    const c=document.getElementById('submit-confirmation');
-                    if(c){c.hidden=false;}
-                }">
+                hx-on::after-request="
+                    const fb=document.getElementById('submit-feedback');
+                    if(event.detail.successful){
+                        this.reset();
+                        if(fb){
+                            fb.hidden=false;
+                            fb.classList.remove('is-error');
+                            fb.innerHTML='Thanks &mdash; submitted for review.';
+                        }
+                    } else if(fb){
+                        const s=event.detail.xhr.status;
+                        fb.hidden=false;
+                        fb.classList.add('is-error');
+                        fb.textContent = s===409
+                            ? 'That name is already proposed or already exists for this race/gender.'
+                            : (s===400
+                                ? 'That name did not pass the content check -- try something else.'
+                                : 'Could not submit that name -- try again.');
+                    }">
                 <label class="lbl" for="submit-name-input">Suggest a name</label>
                 <input
                     id="submit-name-input"
                     class="submit-input"
                     name="displayName"
                     type="text"
-                    maxlength="128"
+                    th:attr="maxlength=${submissionMaxLength}"
                     required
                     placeholder="e.g. Sylvaine" />
                 <button type="submit" class="act">Submit for review</button>
             </form>
-            <p id="submit-confirmation" class="submit-confirmation" hidden>Thanks <em>&mdash; submitted for review.</em></p>
+            <p id="submit-feedback" class="submit-feedback" hidden></p>
         </div>
 
         <!-- Anonymous counterpart to the favorite/report/generate-more/submit affordances

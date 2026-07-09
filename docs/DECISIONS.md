@@ -2592,3 +2592,31 @@ is out of scope for a presentational-only slice.
 on `submit-name-form`, following the plan's "drive it with/without a `user(...)` principal" -- these
 tests already hit the same `sec:authorize` branches the new form lives inside, so extending them
 covers the form without duplicating setup.
+
+**Correction, caught in review of #77: the client-side `maxlength` didn't match the real gate, and
+non-2xx responses were silently swallowed.** Two findings on the original form:
+
+1. `maxlength="128"` matched `name_submissions.display_name`'s column width, not the actual content
+   gate -- `QualityGateService`'s default `app.quality-gate.max-length` is `30`. Anything 31-128
+   chars would pass the client check, pass the controller's length guard, then get a guaranteed
+   `400` from `passesQualityGate`, which the success-only handler showed no feedback for at all.
+   Fixed by adding `QualityGateService.getMaxLength()` and a new `submissionMaxLength` model
+   attribute in `NameBrowserController.populateBrowser` (a small, justified backend touch to an
+   otherwise presentational PR), so the template's `maxlength` always tracks the live config value
+   instead of a value that could drift -- or, as here, never actually matched to begin with.
+2. `hx-on::after-request`'s `if(event.detail.successful)` guard meant every failure -- not just the
+   quality-gate `400` above, but the `409` for an existing live name or an existing pending
+   submission, which is a normal thing to hit when suggesting a name someone already proposed --
+   rendered no feedback whatsoever: input not cleared, no message, indistinguishable from a page
+   that silently did nothing. Renamed `#submit-confirmation` to `#submit-feedback` and branched on
+   `event.detail.xhr.status` to show a distinct message for `409` vs `400` vs any other failure,
+   styled with the same bordered-box `.error` convention `login.html`/`register.html` already use
+   (this design system stays monochrome -- no new color introduced). The original "no client-side
+   error-rendering UI" scoping still holds in spirit -- the server remains the only source of truth
+   for *why* a submission failed -- but "silent" was never the intent, just an oversight in the
+   first cut.
+
+Added `index_should_RenderSubmitFormMaxlengthFromQualityGateConfig_When_Authenticated` to
+`NameBrowserControllerTest` (stubs `getMaxLength()` to a non-default value and asserts it's the
+rendered attribute) as a regression guard against the `maxlength` value silently drifting from
+config again.

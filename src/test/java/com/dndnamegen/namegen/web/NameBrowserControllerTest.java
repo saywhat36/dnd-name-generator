@@ -18,6 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.dndnamegen.namegen.favorite.FavoriteService;
 import com.dndnamegen.namegen.generation.PoolReplenishmentService;
+import com.dndnamegen.namegen.generation.QualityGateService;
 import com.dndnamegen.namegen.identity.Identity;
 import com.dndnamegen.namegen.name.Gender;
 import com.dndnamegen.namegen.name.Name;
@@ -57,6 +58,8 @@ class NameBrowserControllerTest {
 
     @MockBean private PoolReplenishmentService poolReplenishmentService;
 
+    @MockBean private QualityGateService qualityGateService;
+
     /**
      * @WebMvcTest auto-registers Filter beans, so the real SessionIdFilter runs in this
      * slice -- see FavoriteControllerTest for why a cookie (not a directly-set request
@@ -95,6 +98,9 @@ class NameBrowserControllerTest {
         when(nameReportService.getReportedNameIds(ANONYMOUS_IDENTITY)).thenReturn(Set.of());
         when(poolReplenishmentService.getPoolCapPerCombo()).thenReturn(20);
         when(poolReplenishmentService.isReplenishing(any(), any())).thenReturn(false);
+        // Matches app.quality-gate.max-length's real default -- populateBrowser calls this on
+        // every render for the submit-a-name form's maxlength attribute (review of #77).
+        when(qualityGateService.getMaxLength()).thenReturn(30);
     }
 
     @Test
@@ -200,6 +206,21 @@ class NameBrowserControllerTest {
                 .andExpect(content().string(containsString("Generate")))
                 .andExpect(content().string(containsString("submit-name-form")))
                 .andExpect(content().string(not(containsString("Log in <em>to favorite"))));
+    }
+
+    /**
+     * Regression guard for review of #77: the submit form's maxlength must track
+     * QualityGateService's real app.quality-gate.max-length, not a hardcoded value that could
+     * silently drift from (or simply never have matched) the actual server-side gate.
+     */
+    @Test
+    void index_should_RenderSubmitFormMaxlengthFromQualityGateConfig_When_Authenticated() throws Exception {
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED)).thenReturn(List.of());
+        when(qualityGateService.getMaxLength()).thenReturn(45);
+
+        mockMvc.perform(withOwner(get("/")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("maxlength=\"45\"")));
     }
 
     @Test
