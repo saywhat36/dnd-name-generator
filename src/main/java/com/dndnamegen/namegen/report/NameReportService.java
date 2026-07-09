@@ -9,12 +9,13 @@ import org.springframework.stereotype.Service;
  * Records a raw report signal, keyed on session_id, per docs/ARCHITECTURE.md -- a report is
  * not an automatic status change; flagging to FLAGGED is a separate, not-yet-built action.
  *
- * <p>Deliberately still session-keyed even for authenticated identities: {@code
- * name_reports.session_id} is {@code NOT NULL} with no {@code owner_id} column, and {@link
- * Identity#sessionId()} is always populated (by {@code SessionIdFilter}, regardless of auth
- * state), so there is no gap to fill by adding owner_id here. See docs/DECISIONS.md, identity
- * resolution slice, for why this is a deliberate scope decision rather than an oversight --
- * adding owner_id to reports is a clean follow-up, but it's not in the Phase 2 roadmap.
+ * <p>Deliberately still session-keyed, not owner-keyed, even though reports now require an
+ * authenticated request the same as favorites do: {@code name_reports.session_id} is {@code
+ * NOT NULL} with no {@code owner_id} column, and {@link Identity#sessionId()} is always
+ * populated (by {@code SessionIdFilter}, independent of authentication), so there is no gap to
+ * fill by adding owner_id here. See docs/DECISIONS.md, identity resolution slice, for why this
+ * is a deliberate scope decision rather than an oversight -- adding owner_id to reports is a
+ * clean follow-up, but it's not in the Phase 2 roadmap.
  */
 @Service
 public class NameReportService {

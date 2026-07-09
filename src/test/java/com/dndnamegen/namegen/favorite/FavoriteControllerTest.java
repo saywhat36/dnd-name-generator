@@ -31,8 +31,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 class FavoriteControllerTest {
 
     private static final String SESSION_ID = "11111111-1111-1111-1111-111111111111";
-    private static final Identity SESSION_IDENTITY = Identity.ofSession(SESSION_ID);
-    private static final Identity OWNER_IDENTITY = Identity.ofUser(42L, SESSION_ID);
+    private static final Identity IDENTITY = Identity.of(42L, SESSION_ID);
 
     @Autowired private MockMvc mockMvc;
 
@@ -44,8 +43,8 @@ class FavoriteControllerTest {
      * @WebMvcTest auto-registers Filter beans, so the real SessionIdFilter runs in this slice.
      * Setting the request attribute directly is not enough -- with no cookie present,
      * SessionIdFilter mints its own random session id and overwrites the attribute before
-     * FavoriteController reads it. Supplying a cookie in the real SessionIdFilter's own
-     * format (a valid UUID) makes the filter recognize and pass through this session id
+     * CurrentIdentityArgumentResolver reads it. Supplying a cookie in the real SessionIdFilter's
+     * own format (a valid UUID) makes the filter recognize and pass through this session id
      * instead of minting a new one.
      */
     private static MockHttpServletRequestBuilder withSession(MockHttpServletRequestBuilder builder) {
@@ -54,8 +53,9 @@ class FavoriteControllerTest {
 
     /**
      * Authenticates as an {@link AppUserDetails} principal (ownerId 42) on top of the session
-     * cookie -- CurrentIdentityArgumentResolver should prefer the authenticated owner id over the
-     * still-present session id here, proving favorites go owner-keyed once authenticated.
+     * cookie -- favorites now require an authenticated request unconditionally (no anonymous
+     * fallback, see docs/DECISIONS.md, identity resolution slice revision), so every test here
+     * except the anonymous-rejection case authenticates.
      */
     private static MockHttpServletRequestBuilder withOwner(MockHttpServletRequestBuilder builder) {
         AppUserDetails principal =
@@ -67,41 +67,37 @@ class FavoriteControllerTest {
     void addFavorite_should_ReturnCreated_When_NameExists() throws Exception {
         when(nameRepository.existsById(1L)).thenReturn(true);
 
-        mockMvc.perform(withSession(post("/favorites").param("nameId", "1")))
-                .andExpect(status().isCreated());
+        mockMvc.perform(withOwner(post("/favorites").param("nameId", "1"))).andExpect(status().isCreated());
 
-        verify(favoriteService).addFavorite(SESSION_IDENTITY, 1L);
+        verify(favoriteService).addFavorite(IDENTITY, 1L);
     }
 
     @Test
     void addFavorite_should_ReturnNotFound_When_NameIdDoesNotReferenceARealName() throws Exception {
         when(nameRepository.existsById(1L)).thenReturn(false);
 
-        mockMvc.perform(withSession(post("/favorites").param("nameId", "1")))
-                .andExpect(status().isNotFound());
+        mockMvc.perform(withOwner(post("/favorites").param("nameId", "1"))).andExpect(status().isNotFound());
     }
 
+    /**
+     * CurrentIdentityArgumentResolver throws InsufficientAuthenticationException when there is
+     * no authenticated AppUserDetails principal -- Spring Security's ExceptionTranslationFilter
+     * catches that and, since this app uses formLogin (see WebSecurityConfig) with no custom
+     * AuthenticationEntryPoint, redirects to the login page rather than returning a bare 401.
+     * Route-level enforcement (rejecting the request before it ever reaches this resolver) is
+     * Roadmap Phase 2's still-open "Route-level security" item -- this proves the identity layer
+     * itself refuses to serve an anonymous request even before that lands.
+     */
     @Test
-    void addFavorite_should_UseOwnerKeyedIdentity_When_Authenticated() throws Exception {
-        when(nameRepository.existsById(1L)).thenReturn(true);
-
-        mockMvc.perform(withOwner(post("/favorites").param("nameId", "1"))).andExpect(status().isCreated());
-
-        verify(favoriteService).addFavorite(OWNER_IDENTITY, 1L);
+    void addFavorite_should_RedirectToLogin_When_Unauthenticated() throws Exception {
+        mockMvc.perform(withSession(post("/favorites").param("nameId", "1"))).andExpect(status().is3xxRedirection());
     }
 
     @Test
     void removeFavorite_should_ReturnNoContent() throws Exception {
-        mockMvc.perform(withSession(delete("/favorites/1"))).andExpect(status().isNoContent());
-
-        verify(favoriteService).removeFavorite(SESSION_IDENTITY, 1L);
-    }
-
-    @Test
-    void removeFavorite_should_UseOwnerKeyedIdentity_When_Authenticated() throws Exception {
         mockMvc.perform(withOwner(delete("/favorites/1"))).andExpect(status().isNoContent());
 
-        verify(favoriteService).removeFavorite(OWNER_IDENTITY, 1L);
+        verify(favoriteService).removeFavorite(IDENTITY, 1L);
     }
 
     @Test
@@ -109,13 +105,13 @@ class FavoriteControllerTest {
         Name favoritedName = mock(Name.class);
         when(favoritedName.getId()).thenReturn(1L);
         when(favoritedName.getDisplayName()).thenReturn("Aelric");
-        when(favoriteService.listFavorites(SESSION_IDENTITY)).thenReturn(List.of(favoritedName));
+        when(favoriteService.listFavorites(IDENTITY)).thenReturn(List.of(favoritedName));
 
-        mockMvc.perform(withSession(get("/favorites")))
+        mockMvc.perform(withOwner(get("/favorites")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(1))
                 .andExpect(jsonPath("$[0].displayName").value("Aelric"));
 
-        verify(favoriteService).listFavorites(eq(SESSION_IDENTITY));
+        verify(favoriteService).listFavorites(eq(IDENTITY));
     }
 }

@@ -27,8 +27,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 class NameReportControllerTest {
 
     private static final String SESSION_ID = "11111111-1111-1111-1111-111111111111";
-    private static final Identity SESSION_IDENTITY = Identity.ofSession(SESSION_ID);
-    private static final Identity OWNER_IDENTITY = Identity.ofUser(42L, SESSION_ID);
+    private static final Identity IDENTITY = Identity.of(42L, SESSION_ID);
 
     @Autowired private MockMvc mockMvc;
 
@@ -47,7 +46,11 @@ class NameReportControllerTest {
         return builder.cookie(new Cookie(SessionIdFilter.COOKIE_NAME, SESSION_ID)).with(csrf());
     }
 
-    /** Authenticated on top of the session cookie -- reports must still key on sessionId. */
+    /**
+     * Authenticated on top of the session cookie -- reports now require an authenticated request
+     * unconditionally (no anonymous fallback, see docs/DECISIONS.md, identity resolution slice
+     * revision), even though the row itself still keys on sessionId, not ownerId.
+     */
     private static MockHttpServletRequestBuilder withOwner(MockHttpServletRequestBuilder builder) {
         AppUserDetails principal =
                 new AppUserDetails(42L, "gandalf", "hash", true, List.of(new SimpleGrantedAuthority("ROLE_USER")));
@@ -58,38 +61,36 @@ class NameReportControllerTest {
     void reportName_should_ReturnCreated_When_NameExists() throws Exception {
         when(nameRepository.existsById(1L)).thenReturn(true);
 
-        mockMvc.perform(withSession(post("/reports").param("nameId", "1").param("reason", "not a real name")))
+        mockMvc.perform(withOwner(post("/reports").param("nameId", "1").param("reason", "not a real name")))
                 .andExpect(status().isCreated());
 
-        verify(nameReportService).reportName(SESSION_IDENTITY, 1L, "not a real name");
+        verify(nameReportService).reportName(IDENTITY, 1L, "not a real name");
     }
 
     @Test
     void reportName_should_ReturnCreated_When_ReasonIsOmitted() throws Exception {
         when(nameRepository.existsById(1L)).thenReturn(true);
 
-        mockMvc.perform(withSession(post("/reports").param("nameId", "1")))
-                .andExpect(status().isCreated());
+        mockMvc.perform(withOwner(post("/reports").param("nameId", "1"))).andExpect(status().isCreated());
 
-        verify(nameReportService).reportName(SESSION_IDENTITY, 1L, null);
+        verify(nameReportService).reportName(IDENTITY, 1L, null);
     }
 
     @Test
     void reportName_should_ReturnNotFound_When_NameIdDoesNotReferenceARealName() throws Exception {
         when(nameRepository.existsById(1L)).thenReturn(false);
 
-        mockMvc.perform(withSession(post("/reports").param("nameId", "1")))
-                .andExpect(status().isNotFound());
+        mockMvc.perform(withOwner(post("/reports").param("nameId", "1"))).andExpect(status().isNotFound());
     }
 
     @Test
     void reportName_should_TreatReasonAsNull_When_ReasonIsBlank() throws Exception {
         when(nameRepository.existsById(1L)).thenReturn(true);
 
-        mockMvc.perform(withSession(post("/reports").param("nameId", "1").param("reason", "   ")))
+        mockMvc.perform(withOwner(post("/reports").param("nameId", "1").param("reason", "   ")))
                 .andExpect(status().isCreated());
 
-        verify(nameReportService).reportName(SESSION_IDENTITY, 1L, null);
+        verify(nameReportService).reportName(IDENTITY, 1L, null);
     }
 
     /**
@@ -103,23 +104,20 @@ class NameReportControllerTest {
         when(nameRepository.existsById(1L)).thenReturn(true);
         String tooLong = "x".repeat(257);
 
-        mockMvc.perform(withSession(post("/reports").param("nameId", "1").param("reason", tooLong)))
+        mockMvc.perform(withOwner(post("/reports").param("nameId", "1").param("reason", tooLong)))
                 .andExpect(status().isBadRequest());
 
         verify(nameReportService, never()).reportName(any(), any(), any());
     }
 
     /**
-     * Reports stay session-keyed even for an authenticated request -- see docs/DECISIONS.md,
-     * identity resolution slice. The resolved Identity still carries the authenticated ownerId
-     * (isAuthenticated() is true), but NameReportService.reportName only ever reads sessionId().
+     * CurrentIdentityArgumentResolver throws InsufficientAuthenticationException when there is
+     * no authenticated principal -- see FavoriteControllerTest's equivalent test for why that
+     * manifests as a redirect to login rather than a bare 401 in this app's Spring Security
+     * configuration.
      */
     @Test
-    void reportName_should_ResolveAuthenticatedIdentity_ButStillKeyedOnSession_When_UserIsLoggedIn() throws Exception {
-        when(nameRepository.existsById(1L)).thenReturn(true);
-
-        mockMvc.perform(withOwner(post("/reports").param("nameId", "1"))).andExpect(status().isCreated());
-
-        verify(nameReportService).reportName(OWNER_IDENTITY, 1L, null);
+    void reportName_should_RedirectToLogin_When_Unauthenticated() throws Exception {
+        mockMvc.perform(withSession(post("/reports").param("nameId", "1"))).andExpect(status().is3xxRedirection());
     }
 }

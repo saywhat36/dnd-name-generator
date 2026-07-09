@@ -14,10 +14,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Add/remove/list favorites, keyed on {@link Identity} -- session_id for anonymous requests,
- * owner_id for authenticated ones (see docs/DECISIONS.md, identity resolution slice). Branches
- * internally rather than exposing separate session/owner methods, since every operation's shape
- * is otherwise identical between the two.
+ * Add/remove/list favorites, keyed on {@link Identity#ownerId()} -- there is no anonymous
+ * fallback (see docs/DECISIONS.md, identity resolution slice revision): favorites require an
+ * authenticated request, so {@code Identity} always carries an owner id here.
  */
 @Service
 public class FavoriteService {
@@ -31,24 +30,19 @@ public class FavoriteService {
     }
 
     /**
-     * Idempotent: returns the existing row if this name is already favorited by this identity. A
+     * Idempotent: returns the existing row if this owner already favorited this name. A
      * single-row save() here is not the NameInsertDao batch-poisoning scenario -- a
      * duplicate-insert race just throws a catchable DataIntegrityViolationException off the
-     * (session_id, name_id) or (owner_id, name_id) unique constraint, handled by re-reading the
-     * row the other writer just inserted.
+     * (owner_id, name_id) unique constraint, handled by re-reading the row the other writer
+     * just inserted.
      */
     public Favorite addFavorite(Identity identity, Long nameId) {
-        if (identity.isAuthenticated()) {
-            return favoriteRepository
-                    .findByOwnerIdAndNameId(identity.ownerId(), nameId)
-                    .orElseGet(() -> saveNewForOwner(identity.ownerId(), nameId));
-        }
         return favoriteRepository
-                .findBySessionIdAndNameId(identity.sessionId(), nameId)
-                .orElseGet(() -> saveNewForSession(identity.sessionId(), nameId));
+                .findByOwnerIdAndNameId(identity.ownerId(), nameId)
+                .orElseGet(() -> saveNew(identity.ownerId(), nameId));
     }
 
-    private Favorite saveNewForOwner(Long ownerId, Long nameId) {
+    private Favorite saveNew(Long ownerId, Long nameId) {
         try {
             return favoriteRepository.save(new Favorite(ownerId, nameId));
         } catch (DataIntegrityViolationException e) {
@@ -56,28 +50,14 @@ public class FavoriteService {
         }
     }
 
-    private Favorite saveNewForSession(String sessionId, Long nameId) {
-        try {
-            return favoriteRepository.save(new Favorite(sessionId, nameId));
-        } catch (DataIntegrityViolationException e) {
-            return favoriteRepository
-                    .findBySessionIdAndNameId(sessionId, nameId)
-                    .orElseThrow(() -> e);
-        }
-    }
-
     /**
-     * @Transactional here because deleteByOwnerIdAndNameId/deleteBySessionIdAndNameId are
-     * derived delete queries, which Spring Data requires to run inside a transaction (see
-     * NameService.flagName for the same pattern with an explicit @Modifying query).
+     * @Transactional here because deleteByOwnerIdAndNameId is a derived delete query, which
+     * Spring Data requires to run inside a transaction (see NameService.flagName for the same
+     * pattern with an explicit @Modifying query).
      */
     @Transactional
     public void removeFavorite(Identity identity, Long nameId) {
-        if (identity.isAuthenticated()) {
-            favoriteRepository.deleteByOwnerIdAndNameId(identity.ownerId(), nameId);
-        } else {
-            favoriteRepository.deleteBySessionIdAndNameId(identity.sessionId(), nameId);
-        }
+        favoriteRepository.deleteByOwnerIdAndNameId(identity.ownerId(), nameId);
     }
 
     /**
@@ -88,9 +68,7 @@ public class FavoriteService {
      * straight into NameResponse, which would NPE on a null Name otherwise.
      */
     public List<Name> listFavorites(Identity identity) {
-        List<Favorite> favorites = identity.isAuthenticated()
-                ? favoriteRepository.findByOwnerIdOrderByCreatedAtDescIdDesc(identity.ownerId())
-                : favoriteRepository.findBySessionIdOrderByCreatedAtDescIdDesc(identity.sessionId());
+        List<Favorite> favorites = favoriteRepository.findByOwnerIdOrderByCreatedAtDescIdDesc(identity.ownerId());
         List<Long> orderedNameIds = favorites.stream().map(Favorite::getNameId).toList();
 
         Map<Long, Name> namesById =
@@ -105,9 +83,6 @@ public class FavoriteService {
      * themselves (see listFavorites for the ordered, full-row variant).
      */
     public Set<Long> getFavoritedNameIds(Identity identity) {
-        List<Long> nameIds = identity.isAuthenticated()
-                ? favoriteRepository.findNameIdByOwnerId(identity.ownerId())
-                : favoriteRepository.findNameIdBySessionId(identity.sessionId());
-        return Set.copyOf(nameIds);
+        return Set.copyOf(favoriteRepository.findNameIdByOwnerId(identity.ownerId()));
     }
 }

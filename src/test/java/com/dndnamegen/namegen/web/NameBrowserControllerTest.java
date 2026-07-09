@@ -42,7 +42,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 class NameBrowserControllerTest {
 
     private static final String SESSION_ID = "11111111-1111-1111-1111-111111111111";
-    private static final Identity SESSION_IDENTITY = Identity.ofSession(SESSION_ID);
+    private static final Identity IDENTITY = Identity.of(42L, SESSION_ID);
 
     @Autowired private MockMvc mockMvc;
 
@@ -63,7 +63,11 @@ class NameBrowserControllerTest {
         return builder.cookie(new Cookie(SessionIdFilter.COOKIE_NAME, SESSION_ID)).with(csrf());
     }
 
-    /** Authenticated on top of the session cookie -- the browse page should read owner-keyed ids. */
+    /**
+     * Authenticated on top of the session cookie -- the browse pages now require an
+     * authenticated request unconditionally, same as favorites/reports (full lockdown, no
+     * anonymous fallback; see docs/DECISIONS.md, identity resolution slice revision).
+     */
     private static MockHttpServletRequestBuilder withOwner(MockHttpServletRequestBuilder builder) {
         AppUserDetails principal =
                 new AppUserDetails(42L, "gandalf", "hash", true, List.of(new SimpleGrantedAuthority("ROLE_USER")));
@@ -80,9 +84,9 @@ class NameBrowserControllerTest {
      * generate-more feature's model attributes.
      */
     @BeforeEach
-    void stubNoPriorSessionActivityByDefault() {
-        when(favoriteService.getFavoritedNameIds(SESSION_IDENTITY)).thenReturn(Set.of());
-        when(nameReportService.getReportedNameIds(SESSION_IDENTITY)).thenReturn(Set.of());
+    void stubNoPriorActivityByDefault() {
+        when(favoriteService.getFavoritedNameIds(IDENTITY)).thenReturn(Set.of());
+        when(nameReportService.getReportedNameIds(IDENTITY)).thenReturn(Set.of());
         when(poolReplenishmentService.getPoolCapPerCombo()).thenReturn(20);
         when(poolReplenishmentService.isReplenishing(any(), any())).thenReturn(false);
     }
@@ -94,47 +98,40 @@ class NameBrowserControllerTest {
         when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED))
                 .thenReturn(List.of(curatedName));
 
-        mockMvc.perform(withSession(get("/")))
+        mockMvc.perform(withOwner(get("/")))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Adrie")));
 
         verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE), eq(NameSourceFilter.CURATED));
     }
 
+    /**
+     * CurrentIdentityArgumentResolver throws InsufficientAuthenticationException when there is
+     * no authenticated principal -- see FavoriteControllerTest's equivalent test for why that
+     * manifests as a redirect to login rather than a bare 401 in this app's Spring Security
+     * configuration. The home page is no longer anonymous-browsable (full lockdown decision,
+     * see docs/DECISIONS.md).
+     */
     @Test
-    void index_should_RenderFavoriteAndReportAsPreDisabled_When_SessionAlreadyActedOnAName() throws Exception {
+    void index_should_RedirectToLogin_When_Unauthenticated() throws Exception {
+        mockMvc.perform(withSession(get("/"))).andExpect(status().is3xxRedirection());
+    }
+
+    @Test
+    void index_should_RenderFavoriteAndReportAsPreDisabled_When_OwnerAlreadyActedOnAName() throws Exception {
         Name curatedName = mock(Name.class);
         when(curatedName.getId()).thenReturn(1L);
         when(curatedName.getDisplayName()).thenReturn("Adrie");
         when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED))
                 .thenReturn(List.of(curatedName));
-        when(favoriteService.getFavoritedNameIds(SESSION_IDENTITY)).thenReturn(Set.of(1L));
-        when(nameReportService.getReportedNameIds(SESSION_IDENTITY)).thenReturn(Set.of(1L));
+        when(favoriteService.getFavoritedNameIds(IDENTITY)).thenReturn(Set.of(1L));
+        when(nameReportService.getReportedNameIds(IDENTITY)).thenReturn(Set.of(1L));
 
-        mockMvc.perform(withSession(get("/")))
+        mockMvc.perform(withOwner(get("/")))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Favorited")))
                 .andExpect(content().string(containsString("Reported")))
                 .andExpect(content().string(containsString("disabled")));
-    }
-
-    @Test
-    void index_should_ReadOwnerKeyedFavoriteAndReportIds_When_UserIsAuthenticated() throws Exception {
-        Identity ownerIdentity = Identity.ofUser(42L, SESSION_ID);
-        Name curatedName = mock(Name.class);
-        when(curatedName.getId()).thenReturn(1L);
-        when(curatedName.getDisplayName()).thenReturn("Adrie");
-        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED))
-                .thenReturn(List.of(curatedName));
-        when(favoriteService.getFavoritedNameIds(ownerIdentity)).thenReturn(Set.of(1L));
-        when(nameReportService.getReportedNameIds(ownerIdentity)).thenReturn(Set.of());
-
-        mockMvc.perform(withOwner(get("/")))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("Favorited")));
-
-        verify(favoriteService).getFavoritedNameIds(ownerIdentity);
-        verify(nameReportService).getReportedNameIds(ownerIdentity);
     }
 
     @Test
@@ -144,7 +141,7 @@ class NameBrowserControllerTest {
         when(nameService.getNames(Race.HALF_ORC, Gender.MASCULINE, NameSourceFilter.CURATED))
                 .thenReturn(List.of(curatedName));
 
-        mockMvc.perform(withSession(get("/browse").param("race", "HALF_ORC").param("gender", "MASCULINE")))
+        mockMvc.perform(withOwner(get("/browse").param("race", "HALF_ORC").param("gender", "MASCULINE")))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Argran")));
 
@@ -159,7 +156,7 @@ class NameBrowserControllerTest {
                 .thenReturn(List.of(aiName));
 
         mockMvc.perform(
-                        withSession(get("/browse").param("race", "ELF").param("gender", "FEMININE").param("source", "BOTH")))
+                        withOwner(get("/browse").param("race", "ELF").param("gender", "FEMININE").param("source", "BOTH")))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Sylvaine")));
 
@@ -170,17 +167,17 @@ class NameBrowserControllerTest {
     void browse_should_RenderEmptyMessage_When_NoNamesExistForSelection() throws Exception {
         when(nameService.getNames(Race.HUMAN, Gender.MASCULINE, NameSourceFilter.CURATED)).thenReturn(List.of());
 
-        mockMvc.perform(withSession(get("/browse").param("race", "HUMAN").param("gender", "MASCULINE")))
+        mockMvc.perform(withOwner(get("/browse").param("race", "HUMAN").param("gender", "MASCULINE")))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("No names yet for this race/gender/source")));
     }
 
     @Test
     void browse_should_ReturnBadRequest_When_SourceIsInvalid() throws Exception {
-        mockMvc.perform(get("/browse")
+        mockMvc.perform(withOwner(get("/browse")
                         .param("race", "ELF")
                         .param("gender", "FEMININE")
-                        .param("source", "NOT_A_REAL_SOURCE"))
+                        .param("source", "NOT_A_REAL_SOURCE")))
                 .andExpect(status().isBadRequest());
     }
 
@@ -191,7 +188,7 @@ class NameBrowserControllerTest {
         when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED))
                 .thenReturn(List.of(aiName));
 
-        mockMvc.perform(withSession(get("/browse")
+        mockMvc.perform(withOwner(get("/browse")
                         .param("race", "ELF")
                         .param("gender", "FEMININE")
                         .param("source", "AI_GENERATED")))
@@ -203,7 +200,7 @@ class NameBrowserControllerTest {
     void browse_should_HideGenerateMoreButton_When_SourceIsCuratedOnly() throws Exception {
         when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED)).thenReturn(List.of());
 
-        mockMvc.perform(withSession(get("/browse")))
+        mockMvc.perform(withOwner(get("/browse")))
                 .andExpect(status().isOk())
                 .andExpect(content().string(not(containsString("Generate"))));
     }
@@ -216,7 +213,7 @@ class NameBrowserControllerTest {
                 .thenReturn(List.of(aiName, aiName));
         when(poolReplenishmentService.getPoolCapPerCombo()).thenReturn(2);
 
-        mockMvc.perform(withSession(get("/browse")
+        mockMvc.perform(withOwner(get("/browse")
                         .param("race", "ELF")
                         .param("gender", "FEMININE")
                         .param("source", "AI_GENERATED")))
@@ -232,7 +229,7 @@ class NameBrowserControllerTest {
                 .thenReturn(List.of(aiName));
         when(poolReplenishmentService.isReplenishing(Race.ELF, Gender.FEMININE)).thenReturn(true);
 
-        mockMvc.perform(withSession(get("/browse")
+        mockMvc.perform(withOwner(get("/browse")
                         .param("race", "ELF")
                         .param("gender", "FEMININE")
                         .param("source", "AI_GENERATED")))
@@ -245,7 +242,7 @@ class NameBrowserControllerTest {
     void generateMore_should_TriggerReplenishAndRenderBrowserFragment_When_Posted() throws Exception {
         when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED)).thenReturn(List.of());
 
-        mockMvc.perform(withSession(post("/browse/generate-more")
+        mockMvc.perform(withOwner(post("/browse/generate-more")
                         .param("race", "ELF")
                         .param("gender", "FEMININE")
                         .param("source", "AI_GENERATED")))
@@ -266,7 +263,7 @@ class NameBrowserControllerTest {
         when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED)).thenReturn(List.of());
         when(poolReplenishmentService.isReplenishing(Race.ELF, Gender.FEMININE)).thenReturn(false);
 
-        mockMvc.perform(withSession(post("/browse/generate-more")
+        mockMvc.perform(withOwner(post("/browse/generate-more")
                         .param("race", "ELF")
                         .param("gender", "FEMININE")
                         .param("source", "AI_GENERATED")))

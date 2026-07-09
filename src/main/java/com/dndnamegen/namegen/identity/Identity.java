@@ -3,12 +3,12 @@ package com.dndnamegen.namegen.identity;
 import java.util.Objects;
 
 /**
- * The current request's identity for favorites/reports. {@code sessionId} is always present --
- * {@code SessionIdFilter} mints it for every request regardless of authentication state -- while
- * {@code ownerId} is only set once a request carries an authenticated principal. Favorites branch
- * on {@link #isAuthenticated()} to key on whichever id is available; reports deliberately always
- * use {@link #sessionId()} (see docs/DECISIONS.md, identity resolution slice), since
- * {@code name_reports.session_id} is {@code NOT NULL} and migrating it is out of scope here.
+ * The current request's identity for favorites/reports. Both endpoints require an authenticated
+ * request -- there is no anonymous fallback (see docs/DECISIONS.md, identity resolution slice
+ * revision) -- so {@code ownerId} is always present. {@code sessionId} is carried alongside it
+ * purely because {@code name_reports.session_id} is {@code NOT NULL} with no {@code owner_id}
+ * column of its own; {@code SessionIdFilter} still mints/reads it on every request regardless of
+ * authentication state, so it is always available too.
  */
 public final class Identity {
 
@@ -16,24 +16,14 @@ public final class Identity {
     private final String sessionId;
 
     private Identity(Long ownerId, String sessionId) {
+        this.ownerId = Objects.requireNonNull(ownerId, "ownerId must not be null");
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId must not be null");
-        this.ownerId = ownerId;
     }
 
-    public static Identity ofUser(Long ownerId, String sessionId) {
-        Objects.requireNonNull(ownerId, "ownerId must not be null");
+    public static Identity of(Long ownerId, String sessionId) {
         return new Identity(ownerId, sessionId);
     }
 
-    public static Identity ofSession(String sessionId) {
-        return new Identity(null, sessionId);
-    }
-
-    public boolean isAuthenticated() {
-        return ownerId != null;
-    }
-
-    /** Only meaningful when {@link #isAuthenticated()} is true. */
     public Long ownerId() {
         return ownerId;
     }

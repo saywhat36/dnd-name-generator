@@ -331,15 +331,20 @@ favorites a specific result (see "Refinement and favorites" above).
 - **Phase 1**: everything above.
 - **Phase 2** (deferred, separate skill track from Spring AI): real
   username/password auth -- password hashing, login/register endpoints,
-  session or JWT handling, route-level security. Migrate `favorites`
-  (and memory, if built) from session-keyed to `owner_id`-keyed.
-  **Migration note:** backfilling `owner_id` onto existing session-keyed
+  session or JWT handling, route-level security. Favorites/reports/the
+  browse pages require an authenticated request outright (see
+  docs/DECISIONS.md, identity resolution slice revision) -- there is no
+  anonymous fallback to migrate away from.
+  ~~**Migration note:** backfilling `owner_id` onto existing session-keyed
   favorites can produce a genuine duplicate if one person favorited the
   same name under two different browser sessions before logging in --
   `(session_id, name_id)` uniqueness doesn't protect `(owner_id,
   name_id)` uniqueness after backfill. Run the backfill `UPDATE` with
   `ON CONFLICT DO NOTHING` against a new `(owner_id, name_id)` unique
-  constraint added at that point.
+  constraint added at that point.~~ **Moot as of the identity resolution
+  slice revision:** there are no anonymous favorites to claim or
+  backfill -- favorites always require login, so this edge case no
+  longer applies to this build.
 - **Phase 3** (deferred): backstory generation per name, using SSE
   streaming. Deferred together because streaming has no other use case
   in this project -- 5 short names return too fast for streaming to be
