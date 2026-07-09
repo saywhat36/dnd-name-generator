@@ -2,6 +2,7 @@ package com.dndnamegen.namegen.web;
 
 import com.dndnamegen.namegen.favorite.FavoriteService;
 import com.dndnamegen.namegen.generation.PoolReplenishmentService;
+import com.dndnamegen.namegen.generation.QualityGateService;
 import com.dndnamegen.namegen.identity.Identity;
 import com.dndnamegen.namegen.name.Gender;
 import com.dndnamegen.namegen.name.Name;
@@ -33,16 +34,19 @@ public class NameBrowserController {
     private final FavoriteService favoriteService;
     private final NameReportService nameReportService;
     private final PoolReplenishmentService poolReplenishmentService;
+    private final QualityGateService qualityGateService;
 
     public NameBrowserController(
             NameService nameService,
             FavoriteService favoriteService,
             NameReportService nameReportService,
-            PoolReplenishmentService poolReplenishmentService) {
+            PoolReplenishmentService poolReplenishmentService,
+            QualityGateService qualityGateService) {
         this.nameService = nameService;
         this.favoriteService = favoriteService;
         this.nameReportService = nameReportService;
         this.poolReplenishmentService = poolReplenishmentService;
+        this.qualityGateService = qualityGateService;
     }
 
     @GetMapping("/")
@@ -128,5 +132,8 @@ public class NameBrowserController {
         model.addAttribute("aiPoolSize", aiPoolSize);
         model.addAttribute("aiPoolCap", poolReplenishmentService.getPoolCapPerCombo());
         model.addAttribute("generatingMore", poolReplenishmentService.isReplenishing(race, gender));
+        // Backs the submit-a-name form's client-side maxlength -- see QualityGateService's
+        // getMaxLength() Javadoc for why this reads live config rather than a hardcoded value.
+        model.addAttribute("submissionMaxLength", qualityGateService.getMaxLength());
     }
 }

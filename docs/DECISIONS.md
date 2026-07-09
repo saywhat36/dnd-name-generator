@@ -2556,3 +2556,67 @@ anonymous redirect. Same pre-existing local JDK-26/Mockito-inline-mock gap noted
 the service tests pass with `-Dnet.bytebuddy.experimental=true`, and the `@WebMvcTest` anonymous-auth
 assertion reproduces the known 401-vs-3xx baseline quirk that already affects the committed
 `NameReportControllerTest` on this JVM (not a defect -- passes on the Java 21 target).
+
+## 2026-07-09: User-submitted names -- submit UI on the browse page (PR 3)
+Third slice: a "Suggest a name" form inside the `browser` Thymeleaf fragment, gated
+`sec:authorize="isAuthenticated()"` next to the existing favorite/report/generate-more affordances.
+Purely presentational -- `POST /submissions` (PR 2) already enforces authentication, the quality
+gate, and the duplicate checks server-side, so this PR adds no controller/service code and no
+`WebSecurityConfig` change.
+
+**Follows the report button's `hx-swap="none"` + `hx-on::after-request` pattern, not a page
+reload or fragment swap.** A successful submission doesn't change what's on screen (the name isn't
+live yet -- it's PENDING), so there's nothing to re-render; the handler just resets the form and
+reveals a `hidden` confirmation `<p>`, mirroring how the report button flips itself to a disabled
+"reported" state in place rather than swapping `#browser`. Race/gender are passed as query params
+on the `hx-post` URL (`th:attr="hx-post=@{/submissions(race=${selectedRace},gender=${selectedGender})}"`),
+sourced from the same `selectedRace`/`selectedGender` model attributes `populateBrowser` already
+exposes; `displayName` comes from the form's own `<input name="displayName">`, which htmx
+serializes automatically on submit -- no extra JS needed to assemble the request body.
+
+**CSRF handled the same way as every other htmx request on this page, not re-solved.** The
+`htmx:configRequest` listener in `<head>` echoes the `XSRF-TOKEN` cookie back as a header on every
+htmx-issued request regardless of element type (button or form), so this form needed no
+form-specific CSRF wiring -- confirmed by reading that listener rather than assuming.
+
+**No client-side length/charset validation beyond `maxlength="128"` on the input.** The real gate
+(`QualityGateService`, 30 chars by default, charset + blocklist) lives entirely server-side in
+`NameSubmissionService`; duplicating those rules in JS would drift the moment either side changes.
+A failed submission (400/409) is silently absorbed by the `if(event.detail.successful)` guard --
+same as the existing report button -- rather than adding new client-side error-rendering UI, which
+is out of scope for a presentational-only slice.
+
+**Testing.** Extended `NameBrowserControllerTest`'s existing
+`index_should_RenderActionButtons_When_Authenticated` /
+`index_should_OmitActionButtons_When_Anonymous` tests (rather than adding new ones) with an assertion
+on `submit-name-form`, following the plan's "drive it with/without a `user(...)` principal" -- these
+tests already hit the same `sec:authorize` branches the new form lives inside, so extending them
+covers the form without duplicating setup.
+
+**Correction, caught in review of #77: the client-side `maxlength` didn't match the real gate, and
+non-2xx responses were silently swallowed.** Two findings on the original form:
+
+1. `maxlength="128"` matched `name_submissions.display_name`'s column width, not the actual content
+   gate -- `QualityGateService`'s default `app.quality-gate.max-length` is `30`. Anything 31-128
+   chars would pass the client check, pass the controller's length guard, then get a guaranteed
+   `400` from `passesQualityGate`, which the success-only handler showed no feedback for at all.
+   Fixed by adding `QualityGateService.getMaxLength()` and a new `submissionMaxLength` model
+   attribute in `NameBrowserController.populateBrowser` (a small, justified backend touch to an
+   otherwise presentational PR), so the template's `maxlength` always tracks the live config value
+   instead of a value that could drift -- or, as here, never actually matched to begin with.
+2. `hx-on::after-request`'s `if(event.detail.successful)` guard meant every failure -- not just the
+   quality-gate `400` above, but the `409` for an existing live name or an existing pending
+   submission, which is a normal thing to hit when suggesting a name someone already proposed --
+   rendered no feedback whatsoever: input not cleared, no message, indistinguishable from a page
+   that silently did nothing. Renamed `#submit-confirmation` to `#submit-feedback` and branched on
+   `event.detail.xhr.status` to show a distinct message for `409` vs `400` vs any other failure,
+   styled with the same bordered-box `.error` convention `login.html`/`register.html` already use
+   (this design system stays monochrome -- no new color introduced). The original "no client-side
+   error-rendering UI" scoping still holds in spirit -- the server remains the only source of truth
+   for *why* a submission failed -- but "silent" was never the intent, just an oversight in the
+   first cut.
+
+Added `index_should_RenderSubmitFormMaxlengthFromQualityGateConfig_When_Authenticated` to
+`NameBrowserControllerTest` (stubs `getMaxLength()` to a non-default value and asserts it's the
+rendered attribute) as a regression guard against the `maxlength` value silently drifting from
+config again.
