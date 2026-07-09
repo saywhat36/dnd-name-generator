@@ -53,9 +53,9 @@ class FavoriteControllerTest {
 
     /**
      * Authenticates as an {@link AppUserDetails} principal (ownerId 42) on top of the session
-     * cookie -- favorites now require an authenticated request unconditionally (no anonymous
-     * fallback, see docs/DECISIONS.md, identity resolution slice revision), so every test here
-     * except the anonymous-rejection case authenticates.
+     * cookie -- favorites require an authenticated request, enforced at the filter-chain level
+     * as of slice 7 (see docs/DECISIONS.md, WebSecurityConfig), so every test here except the
+     * anonymous-rejection case authenticates.
      */
     private static MockHttpServletRequestBuilder withOwner(MockHttpServletRequestBuilder builder) {
         AppUserDetails principal =
@@ -80,16 +80,15 @@ class FavoriteControllerTest {
     }
 
     /**
-     * CurrentIdentityArgumentResolver throws InsufficientAuthenticationException when there is
-     * no authenticated AppUserDetails principal -- Spring Security's ExceptionTranslationFilter
-     * catches that and, since this app uses formLogin (see WebSecurityConfig) with no custom
-     * AuthenticationEntryPoint, redirects to the login page rather than returning a bare 401.
-     * Route-level enforcement (rejecting the request before it ever reaches this resolver) is
-     * Roadmap Phase 2's still-open "Route-level security" item -- this proves the identity layer
-     * itself refuses to serve an anonymous request even before that lands.
+     * As of slice 7 (see docs/DECISIONS.md, WebSecurityConfig), POST /favorites requires
+     * authentication at the filter-chain level -- an anonymous, non-htmx request never reaches
+     * this controller at all; HtmxAuthenticationEntryPoint's browser branch (no HX-Request
+     * header) redirects to /login, same 3xx outcome as before route-level security landed, but
+     * now enforced ahead of the controller rather than via CurrentIdentityArgumentResolver
+     * throwing. See NameBrowserControllerTest's htmx-specific case for the other branch.
      */
     @Test
-    void addFavorite_should_RedirectToLogin_When_Unauthenticated() throws Exception {
+    void addFavorite_should_Redirect_When_AnonymousBrowserRequest() throws Exception {
         mockMvc.perform(withSession(post("/favorites").param("nameId", "1"))).andExpect(status().is3xxRedirection());
     }
 

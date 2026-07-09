@@ -111,10 +111,9 @@ class NameReportControllerTest {
     }
 
     /**
-     * CurrentIdentityArgumentResolver throws InsufficientAuthenticationException when there is
-     * no authenticated principal -- see FavoriteControllerTest's equivalent test for why that
-     * manifests as a redirect to login rather than a bare 401 in this app's Spring Security
-     * configuration.
+     * As of slice 7 (see docs/DECISIONS.md, WebSecurityConfig), POST /reports requires
+     * authentication at the filter-chain level -- see FavoriteControllerTest's equivalent test
+     * for why an anonymous, non-htmx request still lands on a 3xx redirect to /login.
      */
     @Test
     void reportName_should_RedirectToLogin_When_Unauthenticated() throws Exception {

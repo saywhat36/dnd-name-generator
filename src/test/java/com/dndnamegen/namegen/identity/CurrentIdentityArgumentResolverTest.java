@@ -1,7 +1,6 @@
 package com.dndnamegen.namegen.identity;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -12,7 +11,6 @@ import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
-import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -37,27 +35,34 @@ class CurrentIdentityArgumentResolverTest {
     }
 
     /**
-     * Favorites/reports/the browse pages all require an authenticated request now -- there is
-     * no anonymous fallback (see docs/DECISIONS.md, identity resolution slice revision), so no
-     * authentication present must be rejected, not silently resolved to a session-only Identity.
+     * As of slice 7 (see docs/DECISIONS.md), the browse routes are public, so this resolver
+     * must tolerate an anonymous request instead of throwing -- route-level security (the
+     * filter chain in WebSecurityConfig, backed by @PreAuthorize) is what actually keeps
+     * anonymous requests off the favorites/reports controllers now, not this resolver.
      */
     @Test
-    void resolveArgument_should_ThrowInsufficientAuthenticationException_When_NoAuthenticationPresent() {
+    void resolveArgument_should_ReturnAnonymousIdentity_When_NoAuthenticationPresent() {
         NativeWebRequest webRequest = webRequestWithSessionId("session-1");
 
-        assertThatThrownBy(() -> resolver.resolveArgument(null, null, webRequest, null))
-                .isInstanceOf(InsufficientAuthenticationException.class);
+        Identity result = (Identity) resolver.resolveArgument(null, null, webRequest, null);
+
+        assertThat(result.isAuthenticated()).isFalse();
+        assertThat(result.ownerId()).isNull();
+        assertThat(result.sessionId()).isEqualTo("session-1");
     }
 
     @Test
-    void resolveArgument_should_ThrowInsufficientAuthenticationException_When_AuthenticationIsAnonymous() {
+    void resolveArgument_should_ReturnAnonymousIdentity_When_AuthenticationIsAnonymous() {
         SecurityContextHolder.getContext()
                 .setAuthentication(new AnonymousAuthenticationToken(
                         "key", "anonymousUser", List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
         NativeWebRequest webRequest = webRequestWithSessionId("session-1");
 
-        assertThatThrownBy(() -> resolver.resolveArgument(null, null, webRequest, null))
-                .isInstanceOf(InsufficientAuthenticationException.class);
+        Identity result = (Identity) resolver.resolveArgument(null, null, webRequest, null);
+
+        assertThat(result.isAuthenticated()).isFalse();
+        assertThat(result.ownerId()).isNull();
+        assertThat(result.sessionId()).isEqualTo("session-1");
     }
 
     @Test

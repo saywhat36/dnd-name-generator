@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -12,6 +13,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.dndnamegen.namegen.favorite.FavoriteService;
@@ -43,6 +45,7 @@ class NameBrowserControllerTest {
 
     private static final String SESSION_ID = "11111111-1111-1111-1111-111111111111";
     private static final Identity IDENTITY = Identity.of(42L, SESSION_ID);
+    private static final Identity ANONYMOUS_IDENTITY = Identity.anonymous(SESSION_ID);
 
     @Autowired private MockMvc mockMvc;
 
@@ -64,9 +67,8 @@ class NameBrowserControllerTest {
     }
 
     /**
-     * Authenticated on top of the session cookie -- the browse pages now require an
-     * authenticated request unconditionally, same as favorites/reports (full lockdown, no
-     * anonymous fallback; see docs/DECISIONS.md, identity resolution slice revision).
+     * Authenticated on top of the session cookie -- used by the tests covering the
+     * authenticated happy path for each route.
      */
     private static MockHttpServletRequestBuilder withOwner(MockHttpServletRequestBuilder builder) {
         AppUserDetails principal =
@@ -81,12 +83,16 @@ class NameBrowserControllerTest {
      * prior activity" for every test; the one test that cares about pre-disabled buttons
      * overrides this. Also defaults the pool cap high and "not currently generating" so
      * existing tests (none of which stub these) don't need to know about the new
-     * generate-more feature's model attributes.
+     * generate-more feature's model attributes. Stubs both the owner and anonymous identity
+     * shapes -- as of slice 7 (see docs/DECISIONS.md) GET / and GET /browse are public, so an
+     * anonymous request resolves an anonymous Identity and still calls these same services.
      */
     @BeforeEach
     void stubNoPriorActivityByDefault() {
         when(favoriteService.getFavoritedNameIds(IDENTITY)).thenReturn(Set.of());
         when(nameReportService.getReportedNameIds(IDENTITY)).thenReturn(Set.of());
+        when(favoriteService.getFavoritedNameIds(ANONYMOUS_IDENTITY)).thenReturn(Set.of());
+        when(nameReportService.getReportedNameIds(ANONYMOUS_IDENTITY)).thenReturn(Set.of());
         when(poolReplenishmentService.getPoolCapPerCombo()).thenReturn(20);
         when(poolReplenishmentService.isReplenishing(any(), any())).thenReturn(false);
     }
@@ -106,15 +112,21 @@ class NameBrowserControllerTest {
     }
 
     /**
-     * CurrentIdentityArgumentResolver throws InsufficientAuthenticationException when there is
-     * no authenticated principal -- see FavoriteControllerTest's equivalent test for why that
-     * manifests as a redirect to login rather than a bare 401 in this app's Spring Security
-     * configuration. The home page is no longer anonymous-browsable (full lockdown decision,
-     * see docs/DECISIONS.md).
+     * Viewing is public as of slice 7 (see docs/DECISIONS.md, WebSecurityConfig): GET / is
+     * permitAll at the filter chain, and CurrentIdentityArgumentResolver resolves an anonymous
+     * Identity rather than throwing, so an anonymous visitor gets a normal 200 render instead
+     * of a forced redirect to /login.
      */
     @Test
-    void index_should_RedirectToLogin_When_Unauthenticated() throws Exception {
-        mockMvc.perform(withSession(get("/"))).andExpect(status().is3xxRedirection());
+    void index_should_Return2xx_When_Anonymous() throws Exception {
+        Name curatedName = mock(Name.class);
+        when(curatedName.getDisplayName()).thenReturn("Adrie");
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED))
+                .thenReturn(List.of(curatedName));
+
+        mockMvc.perform(withSession(get("/")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Adrie")));
     }
 
     @Test
@@ -172,6 +184,22 @@ class NameBrowserControllerTest {
                 .andExpect(content().string(containsString("No names yet for this race/gender/source")));
     }
 
+    /**
+     * Same as index_should_Return2xx_When_Anonymous, for the htmx fragment endpoint -- GET
+     * /browse is also permitAll as of slice 7 (see docs/DECISIONS.md, WebSecurityConfig).
+     */
+    @Test
+    void browse_should_Return2xx_When_Anonymous() throws Exception {
+        Name curatedName = mock(Name.class);
+        when(curatedName.getDisplayName()).thenReturn("Argran");
+        when(nameService.getNames(Race.HALF_ORC, Gender.MASCULINE, NameSourceFilter.CURATED))
+                .thenReturn(List.of(curatedName));
+
+        mockMvc.perform(withSession(get("/browse").param("race", "HALF_ORC").param("gender", "MASCULINE")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Argran")));
+    }
+
     @Test
     void browse_should_ReturnBadRequest_When_SourceIsInvalid() throws Exception {
         mockMvc.perform(withOwner(get("/browse")
@@ -179,6 +207,24 @@ class NameBrowserControllerTest {
                         .param("gender", "FEMININE")
                         .param("source", "NOT_A_REAL_SOURCE")))
                 .andExpect(status().isBadRequest());
+    }
+
+    /**
+     * Companion to browse_should_ReturnBadRequest_When_SourceIsInvalid: anonymous callers get
+     * the same validation behavior as authenticated ones now that GET /browse is public. Does
+     * NOT, by itself, cover the review finding on PR #72 about the container's ERROR-dispatched
+     * forward to /error -- MockMvc's DispatcherServlet resolves MissingServletRequestParameterException
+     * straight to a 400 response without a real servlet container's forward-to-/error, so this
+     * request never re-enters the filter chain as DispatcherType.ERROR the way it would running
+     * behind an actual embedded Tomcat. The .dispatcherTypeMatchers(DispatcherType.ERROR)
+     * .permitAll() fix in WebSecurityConfig is Spring Security's documented remediation for
+     * exactly that scenario; this repo has no @SpringBootTest(webEnvironment = RANDOM_PORT)
+     * infrastructure to exercise the real container's error-page forward, so that fix is
+     * unverified by an automated test here.
+     */
+    @Test
+    void browse_should_ReturnBadRequest_When_AnonymousAndRequiredParamsAreMissing() throws Exception {
+        mockMvc.perform(withSession(get("/browse"))).andExpect(status().isBadRequest());
     }
 
     @Test
@@ -270,5 +316,25 @@ class NameBrowserControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Conjuring")))
                 .andExpect(content().string(not(containsString("Generate"))));
+    }
+
+    /**
+     * The htmx-aware piece of slice 7 (see docs/DECISIONS.md, HtmxAuthenticationEntryPoint):
+     * an anonymous htmx POST must not have the login page's HTML swapped into #browser, so an
+     * HX-Request header on a request to a route requiring authentication gets a bare 401 with
+     * an HX-Redirect header instead of the normal 302 -- htmx performs a full-page navigation to
+     * /login off that header rather than swapping the (401, non-HTML) response body in place.
+     */
+    @Test
+    void generateMore_should_Return401WithHxRedirect_When_AnonymousHtmxRequest() throws Exception {
+        mockMvc.perform(withSession(post("/browse/generate-more")
+                        .header("HX-Request", "true")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "AI_GENERATED")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("HX-Redirect", "/login"));
+
+        verify(poolReplenishmentService, never()).replenish(any(), any());
     }
 }

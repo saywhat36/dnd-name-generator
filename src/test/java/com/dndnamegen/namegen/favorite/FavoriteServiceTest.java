@@ -139,4 +139,18 @@ class FavoriteServiceTest {
 
         assertThat(result).isEmpty();
     }
+
+    /**
+     * Slice 7: the browse pages are public, so getFavoritedNameIds may now be called with an
+     * anonymous Identity (see docs/DECISIONS.md) -- an anonymous visitor has favorited nothing,
+     * so this short-circuits to an empty set without querying the repository with a null owner
+     * id.
+     */
+    @Test
+    void getFavoritedNameIds_should_ReturnEmptySet_When_IdentityIsAnonymous() {
+        Set<Long> result = favoriteService.getFavoritedNameIds(Identity.anonymous("session-1"));
+
+        assertThat(result).isEmpty();
+        verify(favoriteRepository, never()).findNameIdByOwnerId(any());
+    }
 }

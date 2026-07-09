@@ -51,9 +51,15 @@ public class NameReportService {
 
     /**
      * Used by the browse page to mark already-reported names on initial render. Matches
-     * FavoriteService.getFavoritedNameIds's shape -- membership only, no ordering needed.
+     * FavoriteService.getFavoritedNameIds's shape -- membership only, no ordering needed,
+     * including the same slice-7 anonymous short-circuit (the browse routes are public, so
+     * {@code identity} may lack an owner id here even though {@link #reportName} never sees
+     * that case, since the report routes stay authenticated-only).
      */
     public Set<Long> getReportedNameIds(Identity identity) {
+        if (!identity.isAuthenticated()) {
+            return Set.of();
+        }
         return Set.copyOf(nameReportRepository.findNameIdByOwnerId(identity.ownerId()));
     }
 }

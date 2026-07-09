@@ -117,20 +117,28 @@ Status legend: not started / in progress / done
   Security's `formLogin`)
 - [x] Session-based auth (Spring Security form login, `DbUserDetailsService`);
   no JWT -- server-rendered app has no separate API client to hand a token to
-- [ ] Route-level security (every route is still `permitAll()`; a real
-  `role` column exists and `DbUserDetailsService` maps it to a
-  `ROLE_`-prefixed authority, but nothing requires a specific role yet --
-  `Identity` resolution below already assumes authentication and rejects
-  unauthenticated requests at the identity layer, ahead of route-level
-  enforcement)
+- [x] Route-level security (slice 7, see `DECISIONS.md`): `WebSecurityConfig`
+  now enforces public-read/authenticated-write route-by-route (`GET /`,
+  `GET /browse` public; favorites/reports/generate-more authenticated;
+  `/admin/**` placeholder for `hasRole("ADMIN")`, no controller yet) with
+  an htmx-aware `AuthenticationEntryPoint` and belt-and-braces
+  `@PreAuthorize` on the mutating controller methods. This reverses the
+  identity-resolution revision's "full lockdown" of the browse pages below
+  -- `Identity` regained an anonymous shape so `GET /`/`GET /browse` can
+  render for anonymous visitors, since "viewing is public" turned out to
+  be the actual product rule
+- [ ] Hide favorite/report action buttons for anonymous visitors in
+  `index.html` (the endpoints already reject direct anonymous calls as of
+  slice 7 -- this is UI polish, not a security gap)
 - [x] `users.role` column (`VARCHAR` + `CHECK`, `USER`/`ADMIN`) and
   `DbUserDetailsService` reading it into a real `ROLE_` + role authority,
   replacing the previously-hardcoded `ROLE_USER` (slice 6, see
   `DECISIONS.md`)
-- [x] `Identity` resolution (`CurrentIdentityArgumentResolver`): favorites,
-  reports, and the browse pages all require an authenticated request --
-  no anonymous fallback. Favorites and `name_reports` are both
-  owner-keyed as of slice 6 (see `DECISIONS.md`)
+- [x] `Identity` resolution (`CurrentIdentityArgumentResolver`): favorites
+  and reports require an authenticated request, enforced route-level as
+  of slice 7 (see `DECISIONS.md`) -- the browse pages regained an
+  anonymous fallback in that same slice since viewing is public. Favorites
+  and `name_reports` are both owner-keyed as of slice 6 (see `DECISIONS.md`)
 - [x] Add `(owner_id, name_id)` unique constraint on `favorites`
 - [x] Add `owner_id` column + `(owner_id, name_id)` unique constraint on
   `name_reports`, relaxing `session_id` to nullable (slice 6, see

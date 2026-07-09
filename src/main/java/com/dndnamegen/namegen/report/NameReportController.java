@@ -3,6 +3,7 @@ package com.dndnamegen.namegen.report;
 import com.dndnamegen.namegen.identity.Identity;
 import com.dndnamegen.namegen.name.NameRepository;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -31,6 +32,7 @@ public class NameReportController {
 
     @PostMapping("/reports")
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("isAuthenticated()")
     public void reportName(
             @RequestParam Long nameId, @RequestParam(required = false) String reason, Identity identity) {
         requireNameExists(nameId);
