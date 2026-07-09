@@ -2,9 +2,11 @@ package com.dndnamegen.namegen.submission;
 
 import com.dndnamegen.namegen.name.Gender;
 import com.dndnamegen.namegen.name.Race;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -46,4 +48,25 @@ public interface NameSubmissionRepository extends JpaRepository<NameSubmission, 
             ORDER BY s.createdAt ASC, s.id ASC
             """)
     List<PendingSubmissionSummary> findPendingSummaries(@Param("status") SubmissionStatus status, Pageable pageable);
+
+    /**
+     * Admin approve/reject: bulk update the submission's status, reviewer, and reviewed timestamp.
+     * {@code @Modifying(clearAutomatically = true)} for the same reason as {@code NameRepository.updateStatus}:
+     * bulk JPA updates don't trigger setter chains (the entity is setter-free), and the first-level
+     * cache must be cleared so future reads see the new state, not the stale in-memory version.
+     *
+     * <p>Returns the number of rows updated (0 if the submission doesn't exist).
+     */
+    @Modifying(clearAutomatically = true)
+    @Query(
+            """
+            UPDATE NameSubmission s
+            SET s.status = :status, s.reviewerId = :reviewerId, s.reviewedAt = :reviewedAt
+            WHERE s.id = :id
+            """)
+    int updateStatus(
+            @Param("id") Long id,
+            @Param("status") SubmissionStatus status,
+            @Param("reviewerId") Long reviewerId,
+            @Param("reviewedAt") Instant reviewedAt);
 }
