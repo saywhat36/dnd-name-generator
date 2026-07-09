@@ -47,9 +47,9 @@ class NameReportControllerTest {
     }
 
     /**
-     * Authenticated on top of the session cookie -- reports now require an authenticated request
+     * Authenticated on top of the session cookie -- reports require an authenticated request
      * unconditionally (no anonymous fallback, see docs/DECISIONS.md, identity resolution slice
-     * revision), even though the row itself still keys on sessionId, not ownerId.
+     * revision); as of slice 6 the row itself is keyed on ownerId, not sessionId.
      */
     private static MockHttpServletRequestBuilder withOwner(MockHttpServletRequestBuilder builder) {
         AppUserDetails principal =

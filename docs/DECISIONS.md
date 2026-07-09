@@ -2196,3 +2196,73 @@ that branch could never display, and the paired `sec:authorize="isAuthenticated(
 the "Signed in as ... Log out" markup was equally always-true. Fixed by dropping both `sec:authorize`
 conditions: the header now unconditionally renders "Signed in as {username} ... Log out", since
 that's the only state `index.html` can ever be reached in now.
+
+## 2026-07-09: Slice 6 -- roles + owner-keyed favorites & reports schema
+
+**`role` lands as `VARCHAR(16)` + `CHECK (role IN ('USER', 'ADMIN'))` on `users`, not a
+separate roles table (`V6__auth_ownership.sql`).** Matches the existing race/gender/source/status
+convention (see `ARCHITECTURE.md`'s "Why not native Postgres enums") rather than introducing a
+new pattern: two fixed values with no per-role metadata to store, so a lookup table would only
+add a join for no benefit. `User` gained an `Enumerated(EnumType.STRING)` `role` field (new
+`user/Role` enum, `USER`/`ADMIN`) defaulting every new account to `USER` in the constructor, the
+same way `enabled`/`createdAt` are set in Java rather than leaned on the column `DEFAULT`.
+`DbUserDetailsService`'s previously-hardcoded `ROLE_USER` authority (`ROADMAP.md`'s "planned for
+a revised slice 6" item) now maps `user.getRole()` to `ROLE_` + the real role -- closing that gap.
+Route-level authorization that actually checks the authority is still out of scope (`ROADMAP.md`'s
+"Route-level security" item); this only makes the real role available to check once that lands.
+
+**Favorites were already owner-keyed as of slice 5/`V5__favorites_owner_unique.sql`** --
+`V6`'s only work there is the `role` column above; there was no favorites surgery left to do.
+
+**Reports go owner-keyed too, closing the gap the slice-5 decision log called out as a
+"clean, self-contained follow-up if ever wanted."** `name_reports` gained `owner_id BIGINT
+REFERENCES users (id)`, `uq_name_reports_owner_name UNIQUE (owner_id, name_id)`, and
+`idx_name_reports_owner_id`, mirroring favorites' `V5` shape exactly. `session_id` was `NOT
+NULL`; relaxed to nullable since new rows are written with `owner_id` instead. This is real
+schema surgery, not just an addition -- `chk_name_reports_reporter_present CHECK (session_id IS
+NOT NULL OR owner_id IS NOT NULL)` covers the transition the same way `favorites`' original
+`chk_favorites_owner_present` did in `V1`, even though in practice every `Identity` resolved
+today already carries a non-null `ownerId`, so no code path can produce a row satisfying only the
+`session_id` half of that check going forward. The nullable `owner_id` column means the new
+unique constraint doesn't fire against the (now legacy) session-keyed rows written before this
+slice -- same nulls-don't-collide reasoning `V5` relied on for `favorites`.
+
+**`NameReportService`/`NameReport`/`NameReportRepository` were updated in the same slice, not
+left as unused schema.** Landing `owner_id` and the owner-keyed repository methods
+(`findByOwnerIdAndNameId`/`existsByOwnerIdAndNameId`/`findNameIdByOwnerId`) without also flipping
+`reportName`/`getReportedNameIds` to use them would leave the new unique constraint permanently
+unexercised by real traffic and the new columns permanently null -- there is no scenario where
+that half-migrated state is useful, since `Identity.ownerId()` has been non-null for every
+resolved identity since the slice-5 revision. So this slice mirrors `FavoriteService`'s full
+shape: `NameReport`'s `sessionId` field is unmapped from the entity (matching `Favorite`'s
+precedent -- the nullable `session_id` column stays in the schema, orphaned for pre-slice-6 rows,
+since `ddl-auto: validate` only requires mapped columns to exist, not the reverse), and
+`NameReportRepository`'s session-keyed methods (`findBySessionIdAndNameId`/`findNameIdBySessionId`)
+are deleted outright rather than left unused, the same "no session-keyed path to begin with in
+this revision" treatment `Favorite` got in the full-lockdown revision. **The old "claim
+anonymous favorites/reports" concern is moot for the same reason it already was for favorites**
+(see the full-lockdown revision above): there is no anonymous path into either endpoint anymore,
+so there is nothing pre-login to claim or backfill.
+
+**`Identity.sessionId()` is now unread by every consumer in the codebase** (`FavoriteService`
+never read it; `NameReportService` no longer does either as of this slice) but the field itself
+stays on `Identity` -- `SessionIdFilter` still mints/reads the cookie every request regardless of
+authentication state for reasons unrelated to favorites/reports (see its own class Javadoc), so
+removing the field would be a no-op with nothing simplified. `Identity`'s class Javadoc was
+updated to stop citing `name_reports.session_id NOT NULL` as the reason `sessionId` is carried,
+since that's no longer true.
+
+**Testing.** `UserRepositoryIT` gained a role-default-on-save case and a raw-SQL-insert case
+proving the `CHECK` constraint itself rejects an invalid role (not just that the Java `Role` enum
+happens to). `MigrationIT` gained a `name_reports` case covering all three pieces of the V6
+surgery against a real Postgres: an owner-only insert succeeds now that `session_id` is nullable,
+a duplicate `(owner_id, name_id)` pair is rejected by the new unique constraint, and a row with
+neither identifier still trips `chk_name_reports_reporter_present`. `NameReportServiceTest` was
+rewritten wholesale to the owner-keyed shape, mirroring `FavoriteServiceTest`'s cases one-for-one
+plus a dedicated case asserting `reportName` calls `findByOwnerIdAndNameId`, not a session-keyed
+method. `./mvnw test-compile` confirms everything compiles. `./mvnw test` for the touched
+non-Testcontainers classes (`NameReportServiceTest`) passes locally; `UserRepositoryIT`/
+`MigrationIT` could not be exercised locally on this machine -- Testcontainers' Ryuk sidecar
+fails to start against the local Docker daemon's API version (`client version 1.32 is too old`),
+an environment gap unrelated to this change and consistent with the JDK 26/Mockito gap noted in
+earlier slices' decision logs.

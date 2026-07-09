@@ -2,6 +2,8 @@ package com.dndnamegen.namegen.user;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -30,15 +32,20 @@ public class User {
     @Column(name = "enabled", nullable = false)
     private boolean enabled;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", nullable = false)
+    private Role role;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
     protected User() {}
 
     /**
-     * Sets createdAt and enabled here rather than leaning on the column DEFAULTs -- like
+     * Sets createdAt, enabled, and role here rather than leaning on the column DEFAULTs -- like
      * Favorite, Hibernate sends whatever the field holds (NULL / false) on INSERT and never
-     * consults the DB default, so the defaults would only ever apply to hand-written SQL.
+     * consults the DB default, so the defaults would only ever apply to hand-written SQL. Every
+     * new account starts as USER; promotion to ADMIN is a separate, not-yet-built action.
      */
     public User(String username, String passwordHash) {
         if (username == null || username.isBlank()) {
@@ -48,6 +55,7 @@ public class User {
         this.usernameNorm = normalizeUsername(username);
         this.passwordHash = Objects.requireNonNull(passwordHash, "passwordHash must not be null");
         this.enabled = true;
+        this.role = Role.USER;
         this.createdAt = Instant.now();
     }
 
@@ -81,6 +89,10 @@ public class User {
 
     public boolean isEnabled() {
         return enabled;
+    }
+
+    public Role getRole() {
+        return role;
     }
 
     public Instant getCreatedAt() {

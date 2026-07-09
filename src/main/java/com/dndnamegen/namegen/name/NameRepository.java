@@ -37,7 +37,7 @@ public interface NameRepository extends JpaRepository<Name, Long> {
      * List<String> return type, throwing QueryTypeMismatchException the moment a real
      * replenishment cycle reached this call in production -- see docs/DECISIONS.md and
      * https://github.com/saywhat36/dnd-name-generator/issues/46. Same fix, same root
-     * cause, as FavoriteRepository/NameReportRepository's findNameIdBySessionId.
+     * cause, as FavoriteRepository/NameReportRepository's findNameIdByOwnerId.
      */
     @Query("SELECT n.normalizedName FROM Name n WHERE n.race = :race AND n.gender = :gender")
     List<String> findNormalizedNameByRaceAndGender(@Param("race") Race race, @Param("gender") Gender gender);

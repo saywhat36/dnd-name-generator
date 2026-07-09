@@ -9,11 +9,11 @@ import org.springframework.stereotype.Service;
 
 /**
  * Loads accounts by {@code username_norm} for Spring Security's {@code DaoAuthenticationProvider}.
- * Every account maps to a single hardcoded {@code ROLE_USER} authority -- there's no roles table
- * yet, so anything more granular than "authenticated" doesn't exist to model. Route-level
- * authorization stays out of scope for this slice (see docs/ROADMAP.md's still-unchecked
- * "Route-level security" item); a roles table is future work once a route/feature actually needs
- * more than one authority to distinguish.
+ * Maps {@code users.role} to a single {@code ROLE_} + role authority -- one role per account, so
+ * a one-element authority list is correct, not a placeholder. Route-level authorization itself
+ * (actually requiring {@code ROLE_ADMIN} on a route) stays out of scope for this slice (see
+ * docs/ROADMAP.md's still-unchecked "Route-level security" item); this only makes the real role
+ * available to authorize against once that lands.
  */
 @Service
 public class DbUserDetailsService implements UserDetailsService {
@@ -42,6 +42,6 @@ public class DbUserDetailsService implements UserDetailsService {
                 user.getUsername(),
                 user.getPasswordHash(),
                 user.isEnabled(),
-                List.of(new SimpleGrantedAuthority("ROLE_USER")));
+                List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole())));
     }
 }
