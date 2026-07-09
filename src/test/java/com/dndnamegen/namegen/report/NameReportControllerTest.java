@@ -5,16 +5,21 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.dndnamegen.namegen.identity.Identity;
 import com.dndnamegen.namegen.name.NameRepository;
 import com.dndnamegen.namegen.session.SessionIdFilter;
+import com.dndnamegen.namegen.user.AppUserDetails;
 import jakarta.servlet.http.Cookie;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -22,6 +27,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 class NameReportControllerTest {
 
     private static final String SESSION_ID = "11111111-1111-1111-1111-111111111111";
+    private static final Identity SESSION_IDENTITY = Identity.ofSession(SESSION_ID);
+    private static final Identity OWNER_IDENTITY = Identity.ofUser(42L, SESSION_ID);
 
     @Autowired private MockMvc mockMvc;
 
@@ -40,6 +47,13 @@ class NameReportControllerTest {
         return builder.cookie(new Cookie(SessionIdFilter.COOKIE_NAME, SESSION_ID)).with(csrf());
     }
 
+    /** Authenticated on top of the session cookie -- reports must still key on sessionId. */
+    private static MockHttpServletRequestBuilder withOwner(MockHttpServletRequestBuilder builder) {
+        AppUserDetails principal =
+                new AppUserDetails(42L, "gandalf", "hash", true, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        return withSession(builder).with(user(principal));
+    }
+
     @Test
     void reportName_should_ReturnCreated_When_NameExists() throws Exception {
         when(nameRepository.existsById(1L)).thenReturn(true);
@@ -47,7 +61,7 @@ class NameReportControllerTest {
         mockMvc.perform(withSession(post("/reports").param("nameId", "1").param("reason", "not a real name")))
                 .andExpect(status().isCreated());
 
-        verify(nameReportService).reportName(SESSION_ID, 1L, "not a real name");
+        verify(nameReportService).reportName(SESSION_IDENTITY, 1L, "not a real name");
     }
 
     @Test
@@ -57,7 +71,7 @@ class NameReportControllerTest {
         mockMvc.perform(withSession(post("/reports").param("nameId", "1")))
                 .andExpect(status().isCreated());
 
-        verify(nameReportService).reportName(SESSION_ID, 1L, null);
+        verify(nameReportService).reportName(SESSION_IDENTITY, 1L, null);
     }
 
     @Test
@@ -75,7 +89,7 @@ class NameReportControllerTest {
         mockMvc.perform(withSession(post("/reports").param("nameId", "1").param("reason", "   ")))
                 .andExpect(status().isCreated());
 
-        verify(nameReportService).reportName(SESSION_ID, 1L, null);
+        verify(nameReportService).reportName(SESSION_IDENTITY, 1L, null);
     }
 
     /**
@@ -93,5 +107,19 @@ class NameReportControllerTest {
                 .andExpect(status().isBadRequest());
 
         verify(nameReportService, never()).reportName(any(), any(), any());
+    }
+
+    /**
+     * Reports stay session-keyed even for an authenticated request -- see docs/DECISIONS.md,
+     * identity resolution slice. The resolved Identity still carries the authenticated ownerId
+     * (isAuthenticated() is true), but NameReportService.reportName only ever reads sessionId().
+     */
+    @Test
+    void reportName_should_ResolveAuthenticatedIdentity_ButStillKeyedOnSession_When_UserIsLoggedIn() throws Exception {
+        when(nameRepository.existsById(1L)).thenReturn(true);
+
+        mockMvc.perform(withOwner(post("/reports").param("nameId", "1"))).andExpect(status().isCreated());
+
+        verify(nameReportService).reportName(OWNER_IDENTITY, 1L, null);
     }
 }

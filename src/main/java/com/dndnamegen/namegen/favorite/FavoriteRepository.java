@@ -30,4 +30,14 @@ public interface FavoriteRepository extends JpaRepository<Favorite, Long> {
      */
     @Query("SELECT f.nameId FROM Favorite f WHERE f.sessionId = :sessionId")
     List<Long> findNameIdBySessionId(@Param("sessionId") String sessionId);
+
+    /** Owner-keyed mirrors of the session-keyed methods above, for authenticated requests. */
+    List<Favorite> findByOwnerIdOrderByCreatedAtDescIdDesc(Long ownerId);
+
+    Optional<Favorite> findByOwnerIdAndNameId(Long ownerId, Long nameId);
+
+    void deleteByOwnerIdAndNameId(Long ownerId, Long nameId);
+
+    @Query("SELECT f.nameId FROM Favorite f WHERE f.ownerId = :ownerId")
+    List<Long> findNameIdByOwnerId(@Param("ownerId") Long ownerId);
 }

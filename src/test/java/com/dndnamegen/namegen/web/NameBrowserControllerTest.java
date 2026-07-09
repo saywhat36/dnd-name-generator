@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -15,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.dndnamegen.namegen.favorite.FavoriteService;
 import com.dndnamegen.namegen.generation.PoolReplenishmentService;
+import com.dndnamegen.namegen.identity.Identity;
 import com.dndnamegen.namegen.name.Gender;
 import com.dndnamegen.namegen.name.Name;
 import com.dndnamegen.namegen.name.NameService;
@@ -23,6 +25,7 @@ import com.dndnamegen.namegen.name.NameSourceFilter;
 import com.dndnamegen.namegen.name.Race;
 import com.dndnamegen.namegen.report.NameReportService;
 import com.dndnamegen.namegen.session.SessionIdFilter;
+import com.dndnamegen.namegen.user.AppUserDetails;
 import jakarta.servlet.http.Cookie;
 import java.util.List;
 import java.util.Set;
@@ -31,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -38,6 +42,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 class NameBrowserControllerTest {
 
     private static final String SESSION_ID = "11111111-1111-1111-1111-111111111111";
+    private static final Identity SESSION_IDENTITY = Identity.ofSession(SESSION_ID);
 
     @Autowired private MockMvc mockMvc;
 
@@ -58,6 +63,13 @@ class NameBrowserControllerTest {
         return builder.cookie(new Cookie(SessionIdFilter.COOKIE_NAME, SESSION_ID)).with(csrf());
     }
 
+    /** Authenticated on top of the session cookie -- the browse page should read owner-keyed ids. */
+    private static MockHttpServletRequestBuilder withOwner(MockHttpServletRequestBuilder builder) {
+        AppUserDetails principal =
+                new AppUserDetails(42L, "gandalf", "hash", true, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        return withSession(builder).with(user(principal));
+    }
+
     /**
      * Every render calls both id-lookup services regardless of whether the result list is
      * empty, so an unstubbed mock returning null would NPE inside the template's
@@ -69,8 +81,8 @@ class NameBrowserControllerTest {
      */
     @BeforeEach
     void stubNoPriorSessionActivityByDefault() {
-        when(favoriteService.getFavoritedNameIds(SESSION_ID)).thenReturn(Set.of());
-        when(nameReportService.getReportedNameIds(SESSION_ID)).thenReturn(Set.of());
+        when(favoriteService.getFavoritedNameIds(SESSION_IDENTITY)).thenReturn(Set.of());
+        when(nameReportService.getReportedNameIds(SESSION_IDENTITY)).thenReturn(Set.of());
         when(poolReplenishmentService.getPoolCapPerCombo()).thenReturn(20);
         when(poolReplenishmentService.isReplenishing(any(), any())).thenReturn(false);
     }
@@ -96,14 +108,33 @@ class NameBrowserControllerTest {
         when(curatedName.getDisplayName()).thenReturn("Adrie");
         when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED))
                 .thenReturn(List.of(curatedName));
-        when(favoriteService.getFavoritedNameIds(SESSION_ID)).thenReturn(Set.of(1L));
-        when(nameReportService.getReportedNameIds(SESSION_ID)).thenReturn(Set.of(1L));
+        when(favoriteService.getFavoritedNameIds(SESSION_IDENTITY)).thenReturn(Set.of(1L));
+        when(nameReportService.getReportedNameIds(SESSION_IDENTITY)).thenReturn(Set.of(1L));
 
         mockMvc.perform(withSession(get("/")))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Favorited")))
                 .andExpect(content().string(containsString("Reported")))
                 .andExpect(content().string(containsString("disabled")));
+    }
+
+    @Test
+    void index_should_ReadOwnerKeyedFavoriteAndReportIds_When_UserIsAuthenticated() throws Exception {
+        Identity ownerIdentity = Identity.ofUser(42L, SESSION_ID);
+        Name curatedName = mock(Name.class);
+        when(curatedName.getId()).thenReturn(1L);
+        when(curatedName.getDisplayName()).thenReturn("Adrie");
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED))
+                .thenReturn(List.of(curatedName));
+        when(favoriteService.getFavoritedNameIds(ownerIdentity)).thenReturn(Set.of(1L));
+        when(nameReportService.getReportedNameIds(ownerIdentity)).thenReturn(Set.of());
+
+        mockMvc.perform(withOwner(get("/")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Favorited")));
+
+        verify(favoriteService).getFavoritedNameIds(ownerIdentity);
+        verify(nameReportService).getReportedNameIds(ownerIdentity);
     }
 
     @Test

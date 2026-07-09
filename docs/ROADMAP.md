@@ -119,11 +119,16 @@ Status legend: not started / in progress / done
   no JWT -- server-rendered app has no separate API client to hand a token to
 - [ ] Route-level security (every route is still `permitAll()`; a single
   hardcoded `ROLE_USER` exists but nothing requires it yet)
-- [ ] Add `(owner_id, name_id)` unique constraint on `favorites`
+- [x] `Identity` resolution (`CurrentIdentityArgumentResolver`): favorites go
+  owner-keyed once authenticated, session-keyed otherwise; `name_reports`
+  deliberately stays session-keyed (see `DECISIONS.md`)
+- [x] Add `(owner_id, name_id)` unique constraint on `favorites`
 - [ ] Migrate `favorites.owner_id` (and memory conversation ownership,
   if built) from session-keyed to user-keyed, backfilling with
   `ON CONFLICT DO NOTHING` to handle the case where one person
-  favorited the same name under two different sessions pre-login
+  favorited the same name under two different sessions pre-login --
+  still open: this slice only made new writes owner-keyed once
+  authenticated, it did not backfill existing session-scoped rows
 
 ## Phase 3 -- Backstories + streaming (deferred)
 - [ ] Decide backstory persistence model (shared/cached on the name vs.

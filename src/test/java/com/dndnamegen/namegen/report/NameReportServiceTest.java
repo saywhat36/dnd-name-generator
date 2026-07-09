@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.dndnamegen.namegen.identity.Identity;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -14,6 +15,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 
 class NameReportServiceTest {
+
+    private static final Identity SESSION_IDENTITY = Identity.ofSession("session-1");
+    private static final Identity OWNER_IDENTITY = Identity.ofUser(42L, "session-1");
 
     private final NameReportRepository nameReportRepository = mock(NameReportRepository.class);
     private final NameReportService nameReportService = new NameReportService(nameReportRepository);
@@ -23,7 +27,7 @@ class NameReportServiceTest {
         NameReport existing = new NameReport("session-1", 1L, "original reason");
         when(nameReportRepository.findBySessionIdAndNameId("session-1", 1L)).thenReturn(Optional.of(existing));
 
-        NameReport result = nameReportService.reportName("session-1", 1L, "a different reason");
+        NameReport result = nameReportService.reportName(SESSION_IDENTITY, 1L, "a different reason");
 
         assertThat(result).isSameAs(existing);
         verify(nameReportRepository, never()).save(any());
@@ -35,7 +39,7 @@ class NameReportServiceTest {
         NameReport saved = new NameReport("session-1", 1L, "reason");
         when(nameReportRepository.save(any(NameReport.class))).thenReturn(saved);
 
-        NameReport result = nameReportService.reportName("session-1", 1L, "reason");
+        NameReport result = nameReportService.reportName(SESSION_IDENTITY, 1L, "reason");
 
         assertThat(result).isSameAs(saved);
     }
@@ -53,16 +57,33 @@ class NameReportServiceTest {
                 .thenReturn(Optional.of(winnersRow));
         when(nameReportRepository.save(any(NameReport.class))).thenThrow(new DataIntegrityViolationException("dup"));
 
-        NameReport result = nameReportService.reportName("session-1", 1L, "reason");
+        NameReport result = nameReportService.reportName(SESSION_IDENTITY, 1L, "reason");
 
         assertThat(result).isSameAs(winnersRow);
+    }
+
+    /**
+     * Reports deliberately stay session-keyed even for an authenticated identity -- see
+     * docs/DECISIONS.md, identity resolution slice. reportName must key off
+     * Identity.sessionId() regardless of Identity.isAuthenticated().
+     */
+    @Test
+    void reportName_should_UseSessionId_When_IdentityIsAuthenticated() {
+        when(nameReportRepository.findBySessionIdAndNameId("session-1", 1L)).thenReturn(Optional.empty());
+        NameReport saved = new NameReport("session-1", 1L, "reason");
+        when(nameReportRepository.save(any(NameReport.class))).thenReturn(saved);
+
+        NameReport result = nameReportService.reportName(OWNER_IDENTITY, 1L, "reason");
+
+        assertThat(result).isSameAs(saved);
+        verify(nameReportRepository).findBySessionIdAndNameId("session-1", 1L);
     }
 
     @Test
     void getReportedNameIds_should_ReturnIdsAsASet_When_SessionHasReports() {
         when(nameReportRepository.findNameIdBySessionId("session-1")).thenReturn(List.of(2L, 1L));
 
-        Set<Long> result = nameReportService.getReportedNameIds("session-1");
+        Set<Long> result = nameReportService.getReportedNameIds(SESSION_IDENTITY);
 
         assertThat(result).containsExactlyInAnyOrder(1L, 2L);
     }
@@ -71,7 +92,7 @@ class NameReportServiceTest {
     void getReportedNameIds_should_ReturnEmptySet_When_SessionHasNoReports() {
         when(nameReportRepository.findNameIdBySessionId("session-1")).thenReturn(List.of());
 
-        Set<Long> result = nameReportService.getReportedNameIds("session-1");
+        Set<Long> result = nameReportService.getReportedNameIds(SESSION_IDENTITY);
 
         assertThat(result).isEmpty();
     }

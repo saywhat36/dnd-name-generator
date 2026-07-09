@@ -1,9 +1,8 @@
 package com.dndnamegen.namegen.favorite;
 
+import com.dndnamegen.namegen.identity.Identity;
 import com.dndnamegen.namegen.name.NameRepository;
 import com.dndnamegen.namegen.name.dto.NameResponse;
-import com.dndnamegen.namegen.session.SessionIdFilter;
-import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -28,20 +27,20 @@ public class FavoriteController {
 
     @PostMapping("/favorites")
     @ResponseStatus(HttpStatus.CREATED)
-    public void addFavorite(@RequestParam Long nameId, HttpServletRequest request) {
+    public void addFavorite(@RequestParam Long nameId, Identity identity) {
         requireNameExists(nameId);
-        favoriteService.addFavorite(sessionId(request), nameId);
+        favoriteService.addFavorite(identity, nameId);
     }
 
     @DeleteMapping("/favorites/{nameId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void removeFavorite(@PathVariable Long nameId, HttpServletRequest request) {
-        favoriteService.removeFavorite(sessionId(request), nameId);
+    public void removeFavorite(@PathVariable Long nameId, Identity identity) {
+        favoriteService.removeFavorite(identity, nameId);
     }
 
     @GetMapping("/favorites")
-    public List<NameResponse> listFavorites(HttpServletRequest request) {
-        return favoriteService.listFavorites(sessionId(request)).stream()
+    public List<NameResponse> listFavorites(Identity identity) {
+        return favoriteService.listFavorites(identity).stream()
                 .map(NameResponse::from)
                 .toList();
     }
@@ -50,9 +49,5 @@ public class FavoriteController {
         if (!nameRepository.existsById(nameId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No name with id " + nameId);
         }
-    }
-
-    private String sessionId(HttpServletRequest request) {
-        return (String) request.getAttribute(SessionIdFilter.REQUEST_ATTRIBUTE);
     }
 }

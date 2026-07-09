@@ -2019,3 +2019,88 @@ three Spring-context tests in `LoginLogoutTest` specifically -- `DbUserDetailsSe
 mocks run and pass locally with no such gap. `./mvnw test-compile` confirms everything compiles;
 the manual `curl` verification above is what actually exercises the `LoginLogoutTest` assertions in
 this environment.
+
+## 2026-07-09: Identity resolution (slice 5) -- unified owner_id/session_id identity for favorites/reports
+Fifth slice of the security rollout: stops `FavoriteController`, `NameReportController`, and
+`NameBrowserController.populateBrowser` from reaching for the raw `sessionId` request attribute
+directly, replacing it with a resolved `Identity` that's `owner_id`-keyed once a request is
+authenticated and `session_id`-keyed otherwise.
+
+**`Identity` (`identity/Identity.java`) always carries a `sessionId`, and optionally an
+`ownerId`.** `SessionIdFilter` mints/reads its cookie unconditionally on every request regardless
+of authentication state (confirmed in slice 4's decision log), so `sessionId` is never null.
+`ownerId` is only set once `CurrentIdentityArgumentResolver` finds an authenticated
+`AppUserDetails` principal in the `SecurityContext`. `isAuthenticated()` is the single branch
+point both services use -- there is no separate "session-keyed" vs. "owner-keyed" method pair;
+`FavoriteService`/`NameReportService` take an `Identity` and pick the right repository calls
+internally.
+
+**`AppUserDetails` (`user/AppUserDetails.java`) extends Spring Security's `User`, adding an
+`ownerId` field.** The stock `User` principal has no room for the `users.id` row id -- only
+username/password/authorities -- and `Authentication.getName()` (the username) isn't a stable or
+efficient key for repository lookups. `DbUserDetailsService.loadUserByUsername` now returns an
+`AppUserDetails` instead of `User.builder()...build()`; `CurrentIdentityArgumentResolver` checks
+`authentication.getPrincipal() instanceof AppUserDetails` to distinguish a real authenticated user
+from Spring Security's anonymous-authentication placeholder (whose principal is the string
+`"anonymousUser"`, and whose `isAuthenticated()` is `true` -- an `instanceof` check on the
+principal type is what actually distinguishes the two, not `isAuthenticated()` alone).
+
+**`CurrentIdentityArgumentResolver` (`identity/`) is a `HandlerMethodArgumentResolver`, registered
+via a new `WebMvcConfig` (`config/`).** This is the first `HandlerMethodArgumentResolver` and the
+first `WebMvcConfigurer` in the codebase -- both are picked up automatically by `@WebMvcTest`
+slices (Spring Boot's test-slice filter includes `WebMvcConfigurer` beans), so no test wiring
+changes were needed beyond what `FavoriteControllerTest`/`NameReportControllerTest`/
+`NameBrowserControllerTest` already had for `SessionIdFilter`.
+
+**Favorites go owner-keyed once authenticated; `FavoriteRepository` gained
+`findByOwnerIdAndNameId`/`deleteByOwnerIdAndNameId`/`findByOwnerIdOrderByCreatedAtDescIdDesc`/
+`findNameIdByOwnerId` mirroring the existing session-keyed methods, and `Favorite` gained a second
+constructor, `Favorite(Long ownerId, Long nameId)`.** `FavoriteService`'s four public methods
+(`addFavorite`/`removeFavorite`/`listFavorites`/`getFavoritedNameIds`) each branch on
+`identity.isAuthenticated()` rather than exposing an owner-keyed method alongside every
+session-keyed one -- every operation's shape (idempotent add with the same
+find-then-insert-then-reread-on-conflict pattern, ordered list, id-set membership check) is
+otherwise identical between the two, so branching internally avoids duplicating that shape twice
+per method. `V5__favorites_owner_unique.sql` adds `UNIQUE (owner_id, name_id)` on `favorites` --
+`ROADMAP.md`'s Phase 2 already called this out as needed before an owner-keyed write path could
+exist, since `addFavorite`'s idempotent-insert-race handling depends on a DB-level uniqueness
+guarantee the same way the session-keyed path already leans on `uq_favorites_session_name`. A
+plain (non-partial) `UNIQUE` constraint is correct here despite `owner_id` being nullable --
+Postgres treats `NULL` as distinct from every other `NULL` for uniqueness purposes, so anonymous
+rows never spuriously collide with each other under this constraint.
+
+**Reports deliberately stay session-keyed even for an authenticated `Identity` -- not an
+oversight.** `name_reports.session_id` is `NOT NULL` with no `owner_id` column, and adding one is
+explicitly out of scope for this slice (would need its own migration, repository methods, and a
+decision about backfilling existing rows -- none of which the Phase 2 roadmap called for).
+Because `Identity.sessionId()` is always populated regardless of authentication state,
+`NameReportService.reportName`/`getReportedNameIds` simply always read `identity.sessionId()` and
+ignore `ownerId` entirely -- a logged-in user's reports still land against the same session id
+their anonymous browsing would have used. Adding `owner_id` to `name_reports` is a clean,
+self-contained follow-up if ever wanted, tracked as a note in `NameReportService`'s class Javadoc
+rather than a `ROADMAP.md` line item, since it was never on the roadmap to begin with.
+
+**`ROADMAP.md`'s "Migrate `favorites.owner_id` ... from session-keyed to user-keyed, backfilling
+..." item stays unchecked.** This slice makes new favorite writes owner-keyed once a request is
+authenticated; it does not touch existing rows written under a pre-login session id. Backfilling
+(and deciding how to merge two sessions' favorites for the same now-authenticated person) is a
+separate, still-open piece of work.
+
+**Testing.** `FavoriteServiceTest`/`NameReportServiceTest` gained an owner-keyed (or
+authenticated-but-still-session-keyed, for reports) branch alongside every existing session-keyed
+case. `FavoriteControllerTest`/`NameReportControllerTest`/`NameBrowserControllerTest` gained a
+`withOwner(...)` request builder (`spring-security-test`'s `user(UserDetails)` post-processor,
+which builds a `UsernamePasswordAuthenticationToken` from an `AppUserDetails` and marks it
+authenticated) proving an authenticated request resolves the owner-keyed identity end to end
+through the real `CurrentIdentityArgumentResolver`/`WebMvcConfig` wiring, not just at the service
+layer. New `CurrentIdentityArgumentResolverTest` (plain, no Spring context) covers all three
+resolution branches directly: no authentication, Spring Security's anonymous-authentication
+placeholder, and a real `AppUserDetails` principal. `./mvnw test-compile` confirms everything
+compiles. `./mvnw test` was run locally to check for regressions: every `@WebMvcTest` class in the
+whole suite (not just the ones touched here -- `RegistrationControllerTest` included) fails to
+load its `ApplicationContext` on this machine, and `FavoriteServiceTest`'s two pre-existing
+`mock(Name.class)`-based cases fail the same way -- all off the same pre-existing local JDK
+26/Mockito inline-mock-maker gap noted in slice 4's decision log (Byte Buddy does not yet support
+JDK 26; the gap applies to mocking any concrete class, not anything specific to this slice). The
+new plain-mock tests that don't hit that gap (`NameReportServiceTest`,
+`CurrentIdentityArgumentResolverTest`, most of `FavoriteServiceTest`) pass locally.

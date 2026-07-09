@@ -37,11 +37,11 @@ public class DbUserDetailsService implements UserDetailsService {
                 .findByUsernameNorm(User.normalizeUsername(username))
                 .orElseThrow(() -> new UsernameNotFoundException("No account for username: " + username));
 
-        return org.springframework.security.core.userdetails.User.builder()
-                .username(user.getUsername())
-                .password(user.getPasswordHash())
-                .disabled(!user.isEnabled())
-                .authorities(List.of(new SimpleGrantedAuthority("ROLE_USER")))
-                .build();
+        return new AppUserDetails(
+                user.getId(),
+                user.getUsername(),
+                user.getPasswordHash(),
+                user.isEnabled(),
+                List.of(new SimpleGrantedAuthority("ROLE_USER")));
     }
 }

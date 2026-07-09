@@ -36,6 +36,13 @@ public class Favorite {
         this.createdAt = Instant.now();
     }
 
+    /** Owner-keyed variant used once a request resolves to an authenticated {@code Identity}. */
+    public Favorite(Long ownerId, Long nameId) {
+        this.ownerId = ownerId;
+        this.nameId = nameId;
+        this.createdAt = Instant.now();
+    }
+
     public Long getId() {
         return id;
     }
