@@ -70,6 +70,22 @@ public class NameService {
         return nameRepository.updateStatus(nameId, NameStatus.FLAGGED) > 0;
     }
 
+    /** Admin reject (slice 9): same shape as {@link #flagName(Long)}, target status REJECTED. */
+    @Transactional
+    public boolean rejectName(Long nameId) {
+        return nameRepository.updateStatus(nameId, NameStatus.REJECTED) > 0;
+    }
+
+    /**
+     * Admin unflag (slice 9): reverses a FLAGGED/REJECTED status back to ACTIVE. Same
+     * updateStatus call as {@link #flagName(Long)}/{@link #rejectName(Long)} -- a status is a
+     * status, there's no separate "undo" column to reconcile.
+     */
+    @Transactional
+    public boolean unflagName(Long nameId) {
+        return nameRepository.updateStatus(nameId, NameStatus.ACTIVE) > 0;
+    }
+
     private static List<NameSource> toSources(NameSourceFilter filter) {
         return switch (filter) {
             case CURATED -> List.of(NameSource.CURATED);

@@ -169,4 +169,40 @@ class NameServiceTest {
 
         assertThat(result).isFalse();
     }
+
+    @Test
+    void rejectName_should_ReturnTrue_When_NameExists() {
+        when(nameRepository.updateStatus(1L, NameStatus.REJECTED)).thenReturn(1);
+
+        boolean result = nameService.rejectName(1L);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void rejectName_should_ReturnFalse_When_NameDoesNotExist() {
+        when(nameRepository.updateStatus(1L, NameStatus.REJECTED)).thenReturn(0);
+
+        boolean result = nameService.rejectName(1L);
+
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void unflagName_should_ReturnTrue_When_NameExists() {
+        when(nameRepository.updateStatus(1L, NameStatus.ACTIVE)).thenReturn(1);
+
+        boolean result = nameService.unflagName(1L);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void unflagName_should_ReturnFalse_When_NameDoesNotExist() {
+        when(nameRepository.updateStatus(1L, NameStatus.ACTIVE)).thenReturn(0);
+
+        boolean result = nameService.unflagName(1L);
+
+        assertThat(result).isFalse();
+    }
 }
