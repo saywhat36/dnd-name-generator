@@ -146,6 +146,60 @@ class NameBrowserControllerTest {
                 .andExpect(content().string(containsString("disabled")));
     }
 
+    /**
+     * Slice 8 (see docs/DECISIONS.md): the favorite/report icon buttons and the generate-more
+     * CTA are all sec:authorize="isAuthenticated()" in index.html, so an anonymous render omits
+     * all three and shows the "log in to do more" prompt in their place instead. This is
+     * UI-layer defense-in-depth over the route-level/@PreAuthorize enforcement those endpoints
+     * already had as of slice 7 -- see generateMore_should_Return401WithHxRedirect_When_AnonymousHtmxRequest
+     * for proof the server-side rejection is untouched by this template-only change.
+     */
+    @Test
+    void index_should_OmitActionButtons_When_Anonymous() throws Exception {
+        Name aiName = mock(Name.class);
+        when(aiName.getId()).thenReturn(1L);
+        when(aiName.getDisplayName()).thenReturn("Adrie");
+        when(aiName.getSource()).thenReturn(NameSource.AI_GENERATED);
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED))
+                .thenReturn(List.of(aiName));
+
+        mockMvc.perform(withSession(get("/browse")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "AI_GENERATED")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(not(containsString("Favourite"))))
+                .andExpect(content().string(not(containsString("Report"))))
+                .andExpect(content().string(not(containsString("Generate"))))
+                .andExpect(content().string(containsString("Log in")))
+                .andExpect(content().string(containsString("/login")));
+    }
+
+    /**
+     * Companion to index_should_OmitActionButtons_When_Anonymous: an authenticated render shows
+     * the favorite/report buttons and (given an AI-source combo below its pool cap) the
+     * generate-more CTA, and omits the anonymous-only login prompt.
+     */
+    @Test
+    void index_should_RenderActionButtons_When_Authenticated() throws Exception {
+        Name aiName = mock(Name.class);
+        when(aiName.getId()).thenReturn(1L);
+        when(aiName.getDisplayName()).thenReturn("Adrie");
+        when(aiName.getSource()).thenReturn(NameSource.AI_GENERATED);
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED))
+                .thenReturn(List.of(aiName));
+
+        mockMvc.perform(withOwner(get("/browse")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "AI_GENERATED")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Favourite")))
+                .andExpect(content().string(containsString("Report")))
+                .andExpect(content().string(containsString("Generate")))
+                .andExpect(content().string(not(containsString("Log in <em>to favorite"))));
+    }
+
     @Test
     void browse_should_RenderNamesForRequestedRaceAndGender_When_ParamsAreValid() throws Exception {
         Name curatedName = mock(Name.class);

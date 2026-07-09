@@ -2398,3 +2398,51 @@ simpler bar and can be tightened to `ADMIN` later if a real operator-only surfac
 lines up.** Raw `href="/login"` would break if the app were ever deployed under a non-root
 context path; the Thymeleaf `@{...}` link-expression form resolves relative to the context path
 like the rest of the template already does.
+
+## 2026-07-09: Slice 8 -- gate action affordances on auth state (UI-layer)
+
+Picks up `ROADMAP.md`'s slice-7 follow-up item: the per-name favorite/report buttons and the
+generate-more CTA were reachable-looking but 401 on click for an anonymous visitor, since slice 7
+only enforced authentication server-side (route table + `@PreAuthorize`). This slice hides those
+three affordances from anonymous visitors and replaces them with a single "log in to do more"
+prompt, so the UI stops offering actions it will reject.
+
+**This is UI-layer defense-in-depth over slice 7's server-side enforcement, not a substitute for
+it.** The route table and `@PreAuthorize` remain the actual security boundary; `sec:authorize`
+only controls what renders. A `curl -XPOST /favorites` without a session still 401s/redirects
+regardless of what this slice changes, and that's the property that actually matters -- hiding
+the button is purely so a logged-out visitor isn't led to click something that was always going
+to fail.
+
+**Favorite/report buttons gated per-button, not per-row.** Each button carries its own
+`sec:authorize="isAuthenticated()"` rather than wrapping both in a shared element, so the `.row`
+grid (`grid-template-columns:minmax(0,1fr) auto auto auto`) still receives its buttons as direct
+children when they do render -- wrapping them in a `<span>` would collapse both into a single
+grid track and break the column layout. No replacement text renders per row when they're hidden;
+repeating a login prompt next to every one of potentially dozens of names would be noisy, and the
+absence of a button is self-explanatory there.
+
+**The "log in" prompt lives in the `.more` CTA slot, not per-row.** That slot already renders
+exactly one of two mutually exclusive states (the generate-more button, or the polling
+"Conjuring..." indicator) depending on `generatingMore`/pool-cap state; adding a third,
+auth-gated state (`sec:authorize="!isAuthenticated()"`) to the same slot -- "Log in to favorite,
+report, or generate new names", linking to `@{/login}`, styled with the same `.cta` class -- says
+all three gated actions in one place instead of scattering per-row copy. It always renders for an
+anonymous visitor regardless of `selectedSource`/`aiPoolSize`/`aiPoolCap`, since favoriting and
+reporting are unconditionally unavailable to them even when the generate-more button itself
+wouldn't be showing anyway (e.g. `CURATED` source, or already at the AI pool cap) -- the prompt
+is about the login requirement, not the AI pool's state, so it doesn't inherit that gating.
+
+**No `NameBrowserController` change needed.** `FavoriteService.getFavoritedNameIds`/
+`NameReportService.getReportedNameIds` already short-circuit to `Set.of()` for an anonymous
+`Identity` as of slice 7 (see the identity-resolution decision above), so `favoritedNameIds`/
+`reportedNameIds` were already non-null, already-empty model attributes for an anonymous
+request -- this slice only had to stop the template from rendering buttons against them.
+
+**Testing.** `NameBrowserControllerTest` gained
+`index_should_OmitActionButtons_When_Anonymous` (asserts the favorite/report icon buttons and the
+generate-more CTA are absent, and the login prompt is present, for `withSession(get("/"))`) and
+`index_should_RenderActionButtons_When_Authenticated` (asserts the reverse for `withOwner(get("/"))`,
+against the existing AI-pool-below-cap fixture shape). Manual verification: `curl -XPOST
+/favorites` (with a CSRF token, no session auth) still 401s/redirects exactly as it did before
+this slice, confirming the template change didn't touch the actual enforcement.

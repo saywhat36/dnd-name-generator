@@ -127,9 +127,10 @@ Status legend: not started / in progress / done
   -- `Identity` regained an anonymous shape so `GET /`/`GET /browse` can
   render for anonymous visitors, since "viewing is public" turned out to
   be the actual product rule
-- [ ] Hide favorite/report action buttons for anonymous visitors in
-  `index.html` (the endpoints already reject direct anonymous calls as of
-  slice 7 -- this is UI polish, not a security gap)
+- [x] Hide favorite/report/generate-more action buttons for anonymous
+  visitors in `index.html`, replaced with a "log in to do more" prompt
+  (slice 8, see `DECISIONS.md`) -- the endpoints already reject direct
+  anonymous calls as of slice 7, so this is UI polish, not a security fix
 - [x] `users.role` column (`VARCHAR` + `CHECK`, `USER`/`ADMIN`) and
   `DbUserDetailsService` reading it into a real `ROLE_` + role authority,
   replacing the previously-hardcoded `ROLE_USER` (slice 6, see
