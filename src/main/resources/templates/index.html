@@ -257,6 +257,7 @@
         </a>
         <span sec:authorize="hasRole('ADMIN')">
             &nbsp;&middot; <a th:href="@{/admin/reports}">Reports</a>
+            &nbsp;&middot; <a th:href="@{/admin/submissions}">Submissions</a>
         </span>
         <span sec:authorize="isAuthenticated()">
             &nbsp;&middot; Signed in as <span sec:authentication="name"></span>&nbsp;&middot;

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pending submissions &middot; D&amp;D Name Generator</title>
+    <style>
+        :root{
+            --paper:#EFEDE6;
+            --ink:#141310;
+            --muted:#5f5a50;
+            --line:rgba(20,19,16,.16);
+            --sans:"Archivo",system-ui,sans-serif;
+        }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.4}
+        a{color:inherit}
+        .wrap{padding:clamp(1.25rem,4vw,4rem)}
+        h1{font-size:1.6rem;font-weight:600;margin-bottom:.25rem}
+        .back{display:inline-block;margin-bottom:1.5rem;font-size:.85rem;color:var(--muted)}
+        table{width:100%;border-collapse:collapse;margin-top:1rem}
+        th,td{text-align:left;padding:.6rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
+        th{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+        .actions form{display:inline}
+        .actions button{
+            appearance:none;background:none;border:1px solid var(--line);border-radius:4px;
+            font:inherit;font-size:.75rem;padding:.3rem .6rem;margin-right:.4rem;cursor:pointer;
+        }
+        .actions button:hover{background:var(--ink);color:var(--paper)}
+        .empty{color:var(--muted);padding-block:2rem}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <a class="back" th:href="@{/}">&larr; Back to name generator</a>
+    <h1>Pending submissions</h1>
+    <p class="reasons">User-proposed names awaiting review, oldest-first.</p>
+
+    <table>
+        <thead>
+        <tr>
+            <th>Name</th>
+            <th>Race</th>
+            <th>Gender</th>
+            <th>Submitted by</th>
+            <th>When</th>
+            <th>Actions</th>
+        </tr>
+        </thead>
+        <tbody>
+        <!-- Actions column is intentionally empty -- approve/reject land in a later PR
+             (see docs/ROADMAP.md, Phase 2.5 PR 6). This slice is read-only. -->
+        <tr th:each="s : ${submissions}">
+            <td th:text="${s.displayName}"></td>
+            <td th:text="${s.race}"></td>
+            <td th:text="${s.gender}"></td>
+            <td th:text="${s.submitterUsername}"></td>
+            <td th:text="${s.createdAt}"></td>
+            <td class="actions"></td>
+        </tr>
+        <tr th:if="${submissions.isEmpty()}">
+            <td class="empty" colspan="6">No pending submissions.</td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+</body>
+</html>
