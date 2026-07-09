@@ -11,7 +11,9 @@ ALTER TABLE users
 -- are written with owner_id instead. The column stays in place, not dropped -- pre-slice-6 rows
 -- are session-keyed only and there's no backfill story for them (same reasoning V5 applied to
 -- favorites' orphaned session-keyed rows).
-ALTER TABLE name_reports ADD COLUMN owner_id BIGINT REFERENCES users (id);
+ALTER TABLE name_reports ADD COLUMN owner_id BIGINT;
+ALTER TABLE name_reports
+    ADD CONSTRAINT fk_name_reports_owner FOREIGN KEY (owner_id) REFERENCES users (id);
 ALTER TABLE name_reports ALTER COLUMN session_id DROP NOT NULL;
 ALTER TABLE name_reports
     ADD CONSTRAINT uq_name_reports_owner_name UNIQUE (owner_id, name_id);

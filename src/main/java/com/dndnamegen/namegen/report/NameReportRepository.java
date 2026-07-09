@@ -10,8 +10,6 @@ public interface NameReportRepository extends JpaRepository<NameReport, Long> {
 
     Optional<NameReport> findByOwnerIdAndNameId(Long ownerId, Long nameId);
 
-    boolean existsByOwnerIdAndNameId(Long ownerId, Long nameId);
-
     /**
      * Ids only, for the browse page to mark already-reported names. Not a listing endpoint --
      * per docs/DECISIONS.md's report/ entry, there's still no product need to let an owner see
