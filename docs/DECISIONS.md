@@ -2187,3 +2187,12 @@ pre-existing local JDK 26/Mockito inline-mock-maker gap as before (every `@WebMv
 including untouched ones, and any `mock(Name.class)`-based case) -- the plain-mock tests unaffected
 by that gap (`NameReportServiceTest`, `CurrentIdentityArgumentResolverTest`, most of
 `FavoriteServiceTest`) pass locally.
+
+**PR review follow-up: `index.html`'s `sec:authorize="isAnonymous()"` "Log in / Register" header
+link was dead markup left over from before this revision, caught in review on PR #70.** Once `GET
+/` requires an authenticated request (full lockdown, above), an anonymous visitor never reaches
+`index.html` at all -- they're redirected to `/login` before Thymeleaf ever renders the page -- so
+that branch could never display, and the paired `sec:authorize="isAuthenticated()"` wrapper around
+the "Signed in as ... Log out" markup was equally always-true. Fixed by dropping both `sec:authorize`
+conditions: the header now unconditionally renders "Signed in as {username} ... Log out", since
+that's the only state `index.html` can ever be reached in now.
