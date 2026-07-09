@@ -113,9 +113,12 @@ Status legend: not started / in progress / done
 - [x] Register endpoint (`POST /register` + `register.html`); login still
   pending, so the post-registration redirect target (`/login?registered`)
   doesn't resolve yet
-- [ ] Login endpoint
-- [ ] Session or JWT-based auth
-- [ ] Route-level security
+- [x] Login endpoint (`GET /login` + `login.html`; POST handled by Spring
+  Security's `formLogin`)
+- [x] Session-based auth (Spring Security form login, `DbUserDetailsService`);
+  no JWT -- server-rendered app has no separate API client to hand a token to
+- [ ] Route-level security (every route is still `permitAll()`; a single
+  hardcoded `ROLE_USER` exists but nothing requires it yet)
 - [ ] Add `(owner_id, name_id)` unique constraint on `favorites`
 - [ ] Migrate `favorites.owner_id` (and memory conversation ownership,
   if built) from session-keyed to user-keyed, backfilling with
