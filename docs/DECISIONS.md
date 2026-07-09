@@ -2620,3 +2620,39 @@ Added `index_should_RenderSubmitFormMaxlengthFromQualityGateConfig_When_Authenti
 `NameBrowserControllerTest` (stubs `getMaxLength()` to a non-default value and asserts it's the
 rendered attribute) as a regression guard against the `maxlength` value silently drifting from
 config again.
+
+## 2026-07-09: User-submitted names -- admin queue read side (PR 4)
+Fourth slice: `GET /admin/submissions` shows PENDING submissions, oldest-first. Read-only --
+approve/reject actions land in PR 6. Closely mirrors `AdminReportController`/`AdminReportService`
+(slice 9), the existing admin-screen precedent, rather than inventing a new shape:
+`AdminSubmissionService.MAX_PENDING` (200) caps the row count the same way
+`AdminReportService.MAX_REPORTED_NAMES` does, and `AdminSubmissionController` needs no
+`WebSecurityConfig` change since `/admin/**` is already `hasRole("ADMIN")` at the filter-chain
+level (the same reason `AdminReportController` needed none).
+
+**Submitter username via an ad-hoc join, not a mapped `@ManyToOne`.** `NameSubmissionRepository
+.findPendingSummaries` joins `User` the same way `NameReportRepository.findReportedNameSummaries`
+joins `Name` -- `NameSubmission` deliberately has no entity association to `User` (mirrors why
+`NameReport.nameId` stays a bare column), and this is the only query in the submission package that
+needs the join. `PendingSubmissionSummary` (Spring Data projection) and `PendingSubmissionView`
+(record assembled by `AdminSubmissionService`) mirror `ReportedNameSummary`/`ReportedNameView`'s
+split for the same reason: the projection is what the JPQL can bind to, the record is what the
+template actually renders.
+
+**`status` is a bind parameter, not a JPQL enum literal.** Considered
+`WHERE s.status = com.dndnamegen.namegen.submission.SubmissionStatus.PENDING` inline in the query
+string, but every other `@Query` in this codebase (`NameRepository.updateStatus`,
+`.findNormalizedNameByRaceAndGender`) binds enum values via `@Param`, not a literal -- kept the
+existing convention rather than introducing a second style for no functional benefit.
+
+**Verification.** Could not run `NameSubmissionRepositoryIT`'s new
+`findPendingSummaries_should_ReturnPendingRowsOldestFirst_When_QueuedWithResolvedRow` test via
+Testcontainers -- same pre-existing local Docker/JDK-26 environment gap documented throughout this
+log (Testcontainers detects Docker inconsistently in this sandbox, and even when it connects, the
+pinned `ryuk:0.8.1` image isn't cached locally). Verified the query's actual behavior instead by
+applying all migrations (`V1`-`V8`) to a throwaway `postgres:16-alpine` container and running the
+JPQL's raw-SQL equivalent by hand: two `PENDING` rows land oldest-first with the correct joined
+`username`, and a `REJECTED` row for the same submitter is correctly excluded -- matching precedent
+set by the "V7 review findings" fix, which verified constraint behavior the same way when
+Testcontainers was unavailable. `AdminSubmissionControllerTest` (mocked service, no DB) runs
+normally and passes 2/2.

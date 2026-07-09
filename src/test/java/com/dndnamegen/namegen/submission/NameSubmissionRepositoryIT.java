@@ -7,12 +7,14 @@ import com.dndnamegen.namegen.name.Gender;
 import com.dndnamegen.namegen.name.Race;
 import com.dndnamegen.namegen.user.User;
 import com.dndnamegen.namegen.user.UserRepository;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -109,6 +111,30 @@ class NameSubmissionRepositoryIT {
         insertResolved(submitter.getId(), "aelar", "REJECTED");
 
         assertThat(nameSubmissionRepository.count()).isEqualTo(2);
+    }
+
+    /**
+     * Backs the admin submissions queue (PR 4): verifies the ad-hoc join to User for
+     * submitterUsername, the PENDING-only filter (a REJECTED row is excluded), and oldest-first
+     * ordering -- none of which a mocked-repository service test could demonstrate.
+     */
+    @Test
+    void findPendingSummaries_should_ReturnPendingRowsOldestFirst_When_QueuedWithResolvedRow() {
+        User first = userRepository.saveAndFlush(new User("FirstSubmitter", "{bcrypt}$2a$10$submissionsubmissionsubmiss5"));
+        User second = userRepository.saveAndFlush(new User("SecondSubmitter", "{bcrypt}$2a$10$submissionsubmissionsubmiss6"));
+        nameSubmissionRepository.saveAndFlush(new NameSubmission(first.getId(), "Aelar", Race.ELF, Gender.MASCULINE));
+        nameSubmissionRepository.saveAndFlush(
+                new NameSubmission(second.getId(), "Borin", Race.DWARF, Gender.MASCULINE));
+        insertResolved(first.getId(), "rejectedname", "REJECTED");
+
+        List<PendingSubmissionSummary> summaries =
+                nameSubmissionRepository.findPendingSummaries(SubmissionStatus.PENDING, PageRequest.of(0, 10));
+
+        assertThat(summaries).hasSize(2);
+        assertThat(summaries.get(0).getDisplayName()).isEqualTo("Aelar");
+        assertThat(summaries.get(0).getSubmitterUsername()).isEqualTo("FirstSubmitter");
+        assertThat(summaries.get(1).getDisplayName()).isEqualTo("Borin");
+        assertThat(summaries.get(1).getSubmitterUsername()).isEqualTo("SecondSubmitter");
     }
 
     private void insertResolved(Long submitterId, String normalized, String status) {

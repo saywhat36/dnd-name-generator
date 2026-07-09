@@ -183,7 +183,14 @@ series of small PRs, each independently releasable.
   input, matching the report button's pattern. Purely presentational --
   no new backend logic, no `WebSecurityConfig` change (the route already
   requires auth as of PR 2)
-- [ ] PR 4 -- admin queue read side (`GET /admin/submissions`, `hasRole('ADMIN')`)
+- [x] PR 4 -- admin queue read side (`GET /admin/submissions`, `hasRole('ADMIN')`):
+  `AdminSubmissionController`/`AdminSubmissionService` mirror
+  `AdminReportController`/`AdminReportService` -- a `MAX_PENDING` (200)
+  cap, oldest-first ordering via a new
+  `NameSubmissionRepository.findPendingSummaries` ad-hoc join to `users`
+  for the submitter's username. No `WebSecurityConfig` change (`/admin/**`
+  already `hasRole('ADMIN')`). Actions column in `admin/submissions.html`
+  is empty -- approve/reject land in PR 6
 - [ ] PR 5 -- `USER_SUBMITTED` `NameSource` + serving-path visibility
   (grouped with CURATED as human-authored), no writer yet
 - [ ] PR 6 -- approve/reject actions: native insert into `names`
