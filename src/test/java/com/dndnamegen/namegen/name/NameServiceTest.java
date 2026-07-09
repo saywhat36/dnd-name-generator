@@ -34,10 +34,10 @@ class NameServiceTest {
     }
 
     @Test
-    void getNames_should_QueryCuratedOnly_When_SourceIsCurated() {
+    void getNames_should_QueryCuratedAndUserSubmitted_When_SourceIsCurated() {
         Name curatedName = mock(Name.class);
         when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(
-                        Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, List.of(NameSource.CURATED)))
+                        Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, List.of(NameSource.CURATED, NameSource.USER_SUBMITTED)))
                 .thenReturn(List.of(curatedName));
 
         List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED);
@@ -60,7 +60,7 @@ class NameServiceTest {
     }
 
     @Test
-    void getNames_should_QueryCuratedAndAiGenerated_When_SourceIsBoth() {
+    void getNames_should_QueryCuratedAiGeneratedAndUserSubmitted_When_SourceIsBoth() {
         Name curatedName = nameWithSource(NameSource.CURATED);
         List<Name> aiNames = aiGeneratedNames(10);
         List<Name> allNames = Stream.concat(Stream.of(curatedName), aiNames.stream()).toList();
@@ -68,7 +68,7 @@ class NameServiceTest {
                         Race.ELF,
                         Gender.FEMININE,
                         NameStatus.ACTIVE,
-                        List.of(NameSource.CURATED, NameSource.AI_GENERATED)))
+                        List.of(NameSource.CURATED, NameSource.AI_GENERATED, NameSource.USER_SUBMITTED)))
                 .thenReturn(allNames);
 
         List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.BOTH);
@@ -114,6 +114,37 @@ class NameServiceTest {
 
         nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED);
 
+        verify(poolReplenishmentService, never()).replenish(any(), any());
+    }
+
+    @Test
+    void getNames_should_IncludeUserSubmittedUnderCuratedFilter() {
+        Name curatedName = nameWithSource(NameSource.CURATED);
+        Name userSubmittedName = nameWithSource(NameSource.USER_SUBMITTED);
+        List<Name> mixedNames = List.of(curatedName, userSubmittedName);
+        when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(
+                        Race.ELF,
+                        Gender.FEMININE,
+                        NameStatus.ACTIVE,
+                        List.of(NameSource.CURATED, NameSource.USER_SUBMITTED)))
+                .thenReturn(mixedNames);
+
+        List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED);
+
+        assertThat(result).containsExactlyElementsOf(mixedNames);
+        verify(poolReplenishmentService, never()).replenish(any(), any());
+    }
+
+    @Test
+    void getNames_should_NotIncludeUserSubmittedUnderAiGeneratedFilter() {
+        List<Name> aiNames = aiGeneratedNames(10);
+        when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(
+                        Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, List.of(NameSource.AI_GENERATED)))
+                .thenReturn(aiNames);
+
+        List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED);
+
+        assertThat(result).containsExactlyElementsOf(aiNames);
         verify(poolReplenishmentService, never()).replenish(any(), any());
     }
 

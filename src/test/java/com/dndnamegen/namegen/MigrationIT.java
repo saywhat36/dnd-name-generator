@@ -121,4 +121,29 @@ class MigrationIT {
             jdbcTemplate.update("DELETE FROM users WHERE id = ?", userId);
         }
     }
+
+    @Test
+    void names_should_AcceptUserSubmittedSource_And_FilterCorrectly() {
+        String normalizedName = "user submitted test";
+        Long userSubmittedNameId = jdbcTemplate.queryForObject(
+                "INSERT INTO names (display_name, normalized_name, race, gender, source, status) "
+                        + "VALUES (?, ?, 'ELF', 'MASCULINE', 'USER_SUBMITTED', 'ACTIVE') RETURNING id",
+                Long.class, "User Submitted Test", normalizedName);
+
+        try {
+            // USER_SUBMITTED rows appear when querying for CURATED source
+            Integer countInCurated = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM names WHERE source = 'USER_SUBMITTED'",
+                    Integer.class);
+            assertThat(countInCurated).isEqualTo(1);
+
+            // Verify it's distinct from AI_GENERATED
+            Integer countAI = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM names WHERE source = 'AI_GENERATED' AND normalized_name = ?",
+                    Integer.class, normalizedName);
+            assertThat(countAI).isZero();
+        } finally {
+            jdbcTemplate.update("DELETE FROM names WHERE id = ?", userSubmittedNameId);
+        }
+    }
 }

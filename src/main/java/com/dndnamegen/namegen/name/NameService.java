@@ -88,9 +88,9 @@ public class NameService {
 
     private static List<NameSource> toSources(NameSourceFilter filter) {
         return switch (filter) {
-            case CURATED -> List.of(NameSource.CURATED);
+            case CURATED -> List.of(NameSource.CURATED, NameSource.USER_SUBMITTED);
             case AI_GENERATED -> List.of(NameSource.AI_GENERATED);
-            case BOTH -> List.of(NameSource.CURATED, NameSource.AI_GENERATED);
+            case BOTH -> List.of(NameSource.CURATED, NameSource.AI_GENERATED, NameSource.USER_SUBMITTED);
         };
     }
 }
