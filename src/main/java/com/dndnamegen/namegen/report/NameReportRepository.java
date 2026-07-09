@@ -28,6 +28,10 @@ public interface NameReportRepository extends JpaRepository<NameReport, Long> {
      * entity association to {@code Name} (see its own Javadoc on why {@code name_id} stays a bare
      * column), and this is the only query in the codebase that needs the join, so it isn't worth
      * introducing one just here.
+     *
+     * <p>{@code Pageable} caps the row count: {@link AdminReportService} fires one follow-up
+     * {@link #findReasonSamples} query per row returned here, so bounding this query bounds that
+     * fan-out (worst-offenders-first ordering means the cap keeps the rows that matter).
      */
     @Query(
             """
@@ -36,7 +40,7 @@ public interface NameReportRepository extends JpaRepository<NameReport, Long> {
             GROUP BY n.id, n.displayName, n.status
             ORDER BY COUNT(r) DESC
             """)
-    List<ReportedNameSummary> findReportedNameSummaries();
+    List<ReportedNameSummary> findReportedNameSummaries(Pageable pageable);
 
     /**
      * A handful of reasons for one reported name, most recent first, to give the admin reports

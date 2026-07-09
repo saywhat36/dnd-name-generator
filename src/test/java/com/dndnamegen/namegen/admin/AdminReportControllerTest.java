@@ -1,14 +1,17 @@
 package com.dndnamegen.namegen.admin;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.dndnamegen.namegen.config.WebSecurityConfig;
 import com.dndnamegen.namegen.name.NameService;
+import com.dndnamegen.namegen.name.NameStatus;
 import com.dndnamegen.namegen.user.AppUserDetails;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -50,9 +53,20 @@ class AdminReportControllerTest {
 
     @Test
     void reports_should_Render_When_AdminRole() throws Exception {
-        when(adminReportService.listReportedNames()).thenReturn(List.of());
+        // Return one populated row so the th:each body actually renders -- exercises the
+        // record-accessor reads, the #strings.listJoin, and the action-form URL building that an
+        // empty list would leave untested.
+        when(adminReportService.listReportedNames())
+                .thenReturn(List.of(new ReportedNameView(
+                        7L, "Grishnakh", NameStatus.FLAGGED, 4L, List.of("slur", "harassment"))));
 
-        mockMvc.perform(withRole(get("/admin/reports"), "ADMIN")).andExpect(status().isOk());
+        mockMvc.perform(withRole(get("/admin/reports"), "ADMIN"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Grishnakh")))
+                .andExpect(content().string(containsString("slur; harassment")))
+                .andExpect(content().string(containsString("/admin/names/7/flag")))
+                .andExpect(content().string(containsString("/admin/names/7/reject")))
+                .andExpect(content().string(containsString("/admin/names/7/unflag")));
     }
 
     @Test

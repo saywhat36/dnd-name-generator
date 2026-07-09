@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -33,9 +33,7 @@
 </head>
 <body>
 <div class="wrap">
-    <span sec:authorize="hasRole('ADMIN')">
-        <a class="back" th:href="@{/}">&larr; Back to name generator</a>
-    </span>
+    <a class="back" th:href="@{/}">&larr; Back to name generator</a>
     <h1>Reported names</h1>
     <p class="reasons">Names with at least one report, worst-offenders-first.</p>
 
