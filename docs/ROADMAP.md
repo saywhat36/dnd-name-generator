@@ -168,8 +168,14 @@ series of small PRs, each independently releasable.
   not a composite UNIQUE including status (see `DECISIONS.md`). V8 also
   backfills the long-missing `HALF_ORC` value into the `names`/`generation_log`
   race CHECKs
-- [ ] PR 2 -- submit endpoint (`POST /submissions`, authenticated): reuse
-  `QualityGateService`, soft duplicate check, `409` on collision
+- [x] PR 2 -- submit endpoint (`POST /submissions`, authenticated): reuses
+  `QualityGateService` as the anti-abuse content screen, soft duplicate
+  check (`409` for an existing live name or an existing pending
+  submission), with the `uq_submissions_pending` partial index as the
+  race-safe backstop (catch-and-remap, mirroring `NameReportService`).
+  Route added to the `.authenticated()` block in `WebSecurityConfig`; the
+  controller bounds a blank/over-128-char `displayName` to `400` before
+  the DB (see `DECISIONS.md`)
 - [ ] PR 3 -- submit UI on the browse page (htmx, authenticated-only)
 - [ ] PR 4 -- admin queue read side (`GET /admin/submissions`, `hasRole('ADMIN')`)
 - [ ] PR 5 -- `USER_SUBMITTED` `NameSource` + serving-path visibility
