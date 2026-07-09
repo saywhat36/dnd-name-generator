@@ -2520,3 +2520,39 @@ V8 backfills the `names`/`generation_log` CHECKs so an approved half-orc submiss
 land in `names` in the later approval slice. `reviewer_id` is indexed alongside `submitter_id` --
 both are FK-referencing columns, which Postgres never auto-indexes (V4 `idx_favorites_owner_id`
 precedent), and the first cut backed only one of them.
+
+## 2026-07-09: User-submitted names -- submit endpoint (PR 2)
+Second slice: `POST /submissions` (authenticated) enqueues a candidate name into the PENDING queue.
+Backend only -- the browse-page UI is a later slice. The route is added to `WebSecurityConfig`'s
+existing `.authenticated()` block next to `/reports`, with belt-and-braces
+`@PreAuthorize("isAuthenticated()")` on the controller method -- the same two-gate pattern the
+mutating routes established in slice 7.
+
+**`QualityGateService` is reused as the anti-abuse gate, not skipped.** Submissions run through the
+exact charset/length/blocklist screen AI candidates pass before entering the shared pool -- it is
+what stops a logged-in user injecting slurs or junk, so a failed gate is a `400`. Screening here
+means the serving path never has to trust user-authored text.
+
+**Two friendly-`409` pre-checks, with the partial index as the real backstop.** The service returns
+`409` if a live `Name` already exists for `(normalized, race, gender)` in any status (it could never
+be approved -- the `names` uniqueness key would `ON CONFLICT DO NOTHING` it away), or if a PENDING
+submission already exists. A concurrent duplicate that races past the pre-check trips
+`uq_submissions_pending` (the partial index from PR 1) and its `DataIntegrityViolationException` is
+caught and remapped to the same `409`, exactly as `NameReportService.saveNew` handles its
+unique-constraint race. The controller bounds `displayName` (blank -> `400`, `> 128` chars -> `400`)
+before the DB -- but unlike `NameReportController.MAX_REASON_LENGTH` (whose `reason` param bypasses
+the quality gate entirely, making that guard the only length check), this one is defense-in-depth,
+not the primary guard: `QualityGateService.passesQualityGate` already rejects anything over
+`app.quality-gate.max-length` (30 by default) with a `400` first. The
+`DataIntegrityViolationException`-misread-as-`409` scenario this guard is modeled on only actually
+happens here if `max-length` is ever configured above 128. Caught in review of #76.
+
+**Testing.** `NameSubmissionServiceTest` (Mockito) covers gate-pass-saves, gate-fail-`400`,
+existing-live-name-`409`, existing-pending-`409`, and the concurrent-`DataIntegrityViolationException`
+-> `409` remap. `NameSubmissionControllerTest` (`@WebMvcTest`, no `WebSecurityConfig` import -- it
+only needs to tell authenticated from anonymous, like every non-admin controller test here) covers
+`201` on a valid authenticated request, `displayName` trimming, blank/over-length `400`, and the
+anonymous redirect. Same pre-existing local JDK-26/Mockito-inline-mock gap noted throughout this log:
+the service tests pass with `-Dnet.bytebuddy.experimental=true`, and the `@WebMvcTest` anonymous-auth
+assertion reproduces the known 401-vs-3xx baseline quirk that already affects the committed
+`NameReportControllerTest` on this JVM (not a defect -- passes on the Java 21 target).

@@ -12,6 +12,16 @@ public interface NameRepository extends JpaRepository<Name, Long> {
             Race race, Gender gender, NameStatus status, NameSource source);
 
     /**
+     * Soft duplicate check for NameSubmissionService: a submitted name that already exists as a
+     * live name (in ANY status/source) can't be enqueued, so it's rejected up front as a friendly
+     * 409 rather than sitting in the queue only to no-op against the (normalized_name, race,
+     * gender) unique constraint at approval time. Matches that constraint's cross-status scope --
+     * see findNormalizedNameByRaceAndGender's Javadoc. Derived exists is safe here (returns a
+     * boolean, not the List<String> projection that tripped QueryTypeMismatchException there).
+     */
+    boolean existsByNormalizedNameAndRaceAndGender(String normalizedName, Race race, Gender gender);
+
+    /**
      * Backs the CURATED/AI_GENERATED/BOTH source toggle in NameService.getNames --
      * BOTH queries CURATED and AI_GENERATED together in one call rather than two
      * separate queries merged in application code.

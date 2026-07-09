@@ -75,19 +75,21 @@ public class WebSecurityConfig {
                         .requestMatchers(PathRequest.toStaticResources().atCommonLocations())
                         .permitAll()
                         // Everything that mutates state requires login: the manual AI-generation
-                        // trigger, favoriting/unfavoriting/listing favorites, and reporting.
+                        // trigger, favoriting/unfavoriting/listing favorites, reporting, and
+                        // submitting a candidate name for review.
                         // Belt-and-braces: the mutating controller methods also carry
                         // @PreAuthorize("isAuthenticated()") (see FavoriteController,
-                        // NameReportController, NameBrowserController.generateMore) -- this filter
-                        // chain is the primary gate, @PreAuthorize is a second, independent check
-                        // that keeps rejecting direct calls even if a route matcher here is ever
-                        // misconfigured.
+                        // NameReportController, NameSubmissionController, NameBrowserController.generateMore) --
+                        // this filter chain is the primary gate, @PreAuthorize is a second,
+                        // independent check that keeps rejecting direct calls even if a route
+                        // matcher here is ever misconfigured.
                         .requestMatchers(
                                 new AntPathRequestMatcher("/browse/generate-more", "POST"),
                                 new AntPathRequestMatcher("/favorites", "POST"),
                                 new AntPathRequestMatcher("/favorites", "GET"),
                                 new AntPathRequestMatcher("/favorites/*", "DELETE"),
-                                new AntPathRequestMatcher("/reports", "POST"))
+                                new AntPathRequestMatcher("/reports", "POST"),
+                                new AntPathRequestMatcher("/submissions", "POST"))
                         .authenticated()
                         // Slice 9: AdminReportController now serves this (role plumbing --
                         // users.role, DbUserDetailsService's ROLE_ mapping -- was already in
