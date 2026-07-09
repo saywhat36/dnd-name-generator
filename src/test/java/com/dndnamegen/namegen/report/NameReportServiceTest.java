@@ -22,9 +22,9 @@ class NameReportServiceTest {
     private final NameReportService nameReportService = new NameReportService(nameReportRepository);
 
     @Test
-    void reportName_should_ReturnExistingRow_When_SessionAlreadyReportedThisName() {
-        NameReport existing = new NameReport("session-1", 1L, "original reason");
-        when(nameReportRepository.findBySessionIdAndNameId("session-1", 1L)).thenReturn(Optional.of(existing));
+    void reportName_should_ReturnExistingRow_When_OwnerAlreadyReportedThisName() {
+        NameReport existing = new NameReport(42L, 1L, "original reason");
+        when(nameReportRepository.findByOwnerIdAndNameId(42L, 1L)).thenReturn(Optional.of(existing));
 
         NameReport result = nameReportService.reportName(IDENTITY, 1L, "a different reason");
 
@@ -34,8 +34,8 @@ class NameReportServiceTest {
 
     @Test
     void reportName_should_SaveNewRow_When_NotYetReported() {
-        when(nameReportRepository.findBySessionIdAndNameId("session-1", 1L)).thenReturn(Optional.empty());
-        NameReport saved = new NameReport("session-1", 1L, "reason");
+        when(nameReportRepository.findByOwnerIdAndNameId(42L, 1L)).thenReturn(Optional.empty());
+        NameReport saved = new NameReport(42L, 1L, "reason");
         when(nameReportRepository.save(any(NameReport.class))).thenReturn(saved);
 
         NameReport result = nameReportService.reportName(IDENTITY, 1L, "reason");
@@ -44,14 +44,14 @@ class NameReportServiceTest {
     }
 
     /**
-     * Simulates two concurrent reportName calls for the same (sessionId, nameId): both pass
-     * the initial findBySessionIdAndNameId check, one wins the insert, the other's save()
+     * Simulates two concurrent reportName calls for the same (ownerId, nameId): both pass
+     * the initial findByOwnerIdAndNameId check, one wins the insert, the other's save()
      * throws off the unique constraint and must return the winner's row instead of propagating.
      */
     @Test
     void reportName_should_ReturnWinnersRow_When_ConcurrentReportRaceViolatesUniqueConstraint() {
-        NameReport winnersRow = new NameReport("session-1", 1L, "reason");
-        when(nameReportRepository.findBySessionIdAndNameId("session-1", 1L))
+        NameReport winnersRow = new NameReport(42L, 1L, "reason");
+        when(nameReportRepository.findByOwnerIdAndNameId(42L, 1L))
                 .thenReturn(Optional.empty())
                 .thenReturn(Optional.of(winnersRow));
         when(nameReportRepository.save(any(NameReport.class))).thenThrow(new DataIntegrityViolationException("dup"));
@@ -62,25 +62,25 @@ class NameReportServiceTest {
     }
 
     /**
-     * Reports are keyed on Identity.sessionId(), not ownerId, even though every Identity now
-     * carries an authenticated owner id too -- see docs/DECISIONS.md, identity resolution slice.
-     * name_reports has no owner_id column, so reportName must ignore ownerId() entirely.
+     * Reports are keyed on Identity.ownerId() as of slice 6, not sessionId -- name_reports
+     * gained an owner_id column and session_id was relaxed to nullable (see
+     * docs/DECISIONS.md). reportName must ignore sessionId() entirely now.
      */
     @Test
-    void reportName_should_UseSessionIdNotOwnerId() {
-        when(nameReportRepository.findBySessionIdAndNameId("session-1", 1L)).thenReturn(Optional.empty());
-        NameReport saved = new NameReport("session-1", 1L, "reason");
+    void reportName_should_UseOwnerIdNotSessionId() {
+        when(nameReportRepository.findByOwnerIdAndNameId(42L, 1L)).thenReturn(Optional.empty());
+        NameReport saved = new NameReport(42L, 1L, "reason");
         when(nameReportRepository.save(any(NameReport.class))).thenReturn(saved);
 
         NameReport result = nameReportService.reportName(IDENTITY, 1L, "reason");
 
         assertThat(result).isSameAs(saved);
-        verify(nameReportRepository).findBySessionIdAndNameId("session-1", 1L);
+        verify(nameReportRepository).findByOwnerIdAndNameId(42L, 1L);
     }
 
     @Test
-    void getReportedNameIds_should_ReturnIdsAsASet_When_SessionHasReports() {
-        when(nameReportRepository.findNameIdBySessionId("session-1")).thenReturn(List.of(2L, 1L));
+    void getReportedNameIds_should_ReturnIdsAsASet_When_OwnerHasReports() {
+        when(nameReportRepository.findNameIdByOwnerId(42L)).thenReturn(List.of(2L, 1L));
 
         Set<Long> result = nameReportService.getReportedNameIds(IDENTITY);
 
@@ -88,8 +88,8 @@ class NameReportServiceTest {
     }
 
     @Test
-    void getReportedNameIds_should_ReturnEmptySet_When_SessionHasNoReports() {
-        when(nameReportRepository.findNameIdBySessionId("session-1")).thenReturn(List.of());
+    void getReportedNameIds_should_ReturnEmptySet_When_OwnerHasNoReports() {
+        when(nameReportRepository.findNameIdByOwnerId(42L)).thenReturn(List.of());
 
         Set<Long> result = nameReportService.getReportedNameIds(IDENTITY);
 

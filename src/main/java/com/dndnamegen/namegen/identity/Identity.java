@@ -6,9 +6,10 @@ import java.util.Objects;
  * The current request's identity for favorites/reports. Both endpoints require an authenticated
  * request -- there is no anonymous fallback (see docs/DECISIONS.md, identity resolution slice
  * revision) -- so {@code ownerId} is always present. {@code sessionId} is carried alongside it
- * purely because {@code name_reports.session_id} is {@code NOT NULL} with no {@code owner_id}
- * column of its own; {@code SessionIdFilter} still mints/reads it on every request regardless of
- * authentication state, so it is always available too.
+ * even though neither {@code FavoriteService} nor, as of slice 6, {@code NameReportService}
+ * reads it anymore -- {@code SessionIdFilter} still mints/reads the cookie on every request
+ * regardless of authentication state (see its own Javadoc for why it stays registered), so
+ * dropping the field here would be a no-op change with no simplification to show for it.
  */
 public final class Identity {
 

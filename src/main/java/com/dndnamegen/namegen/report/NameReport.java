@@ -8,6 +8,15 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
+/**
+ * The {@code name_reports} table still has a nullable {@code session_id} column from before
+ * authentication was required (see V6's schema, docs/DECISIONS.md), but every report is
+ * owner-keyed now -- there is no anonymous fallback, so nothing in this codebase ever constructs
+ * or reads a session-keyed row anymore. Left unmapped here deliberately, not dropped from the
+ * schema, mirroring {@code Favorite}: {@code ddl-auto: validate} only requires mapped columns to
+ * exist, not the reverse, so any pre-existing session-keyed rows are simply untouched, orphaned
+ * data.
+ */
 @Entity
 @Table(name = "name_reports")
 public class NameReport {
@@ -19,8 +28,8 @@ public class NameReport {
     @Column(name = "name_id", nullable = false)
     private Long nameId;
 
-    @Column(name = "session_id", nullable = false)
-    private String sessionId;
+    @Column(name = "owner_id", nullable = false)
+    private Long ownerId;
 
     private String reason;
 
@@ -29,8 +38,8 @@ public class NameReport {
 
     protected NameReport() {}
 
-    public NameReport(String sessionId, Long nameId, String reason) {
-        this.sessionId = sessionId;
+    public NameReport(Long ownerId, Long nameId, String reason) {
+        this.ownerId = ownerId;
         this.nameId = nameId;
         this.reason = reason;
         this.createdAt = Instant.now();
@@ -44,8 +53,8 @@ public class NameReport {
         return nameId;
     }
 
-    public String getSessionId() {
-        return sessionId;
+    public Long getOwnerId() {
+        return ownerId;
     }
 
     public String getReason() {

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -36,6 +37,8 @@ class UserRepositoryIT {
     }
 
     @Autowired private UserRepository userRepository;
+
+    @Autowired private JdbcTemplate jdbcTemplate;
 
     // The container is shared across tests in this class and @SpringBootTest does not roll back,
     // so clear the (unseeded) users table between tests to keep username_norm collisions
@@ -69,6 +72,24 @@ class UserRepositoryIT {
         // on uq_users_username_norm, which is the whole point of storing the normalized form.
         assertThatThrownBy(() ->
                         userRepository.saveAndFlush(new User("gandalf", "{bcrypt}$2a$10$secondsecondsecondsecoB")))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void save_should_DefaultRoleToUser_When_ConstructedNormally() {
+        User saved = userRepository.saveAndFlush(new User("Gandalf", "{bcrypt}$2a$10$7EqJtq98hPqEX7fNZaFWoO"));
+
+        assertThat(saved.getRole()).isEqualTo(Role.USER);
+    }
+
+    // Bypasses the User entity/Role enum to hit the raw column -- proves the V6 CHECK
+    // constraint itself rejects an invalid role, not just that the Java enum happens to.
+    @Test
+    void role_should_RejectInvalidValue_When_InsertedDirectly() {
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                        "INSERT INTO users (username, username_norm, password_hash, role) "
+                                + "VALUES (?, ?, ?, ?)",
+                        "Saruman", "saruman", "{bcrypt}$2a$10$thirdthirdthirdthirdC", "SUPERADMIN"))
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 }
