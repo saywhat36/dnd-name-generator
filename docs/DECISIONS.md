@@ -2363,3 +2363,38 @@ JDK 26/Mockito inline-mock-maker gap as every prior slice (confirmed identical f
 `main` before this change, via `git stash`) -- the plain-mock tests unaffected by that gap
 (`CurrentIdentityArgumentResolverTest`, most of `FavoriteServiceTest`/`NameReportServiceTest`)
 pass locally, including all the new cases above.
+
+## 2026-07-09: Slice 7 review follow-up (PR #72) -- /error dispatch, metrics exposure, href consistency
+
+Three findings from review, all addressed in the same PR rather than a follow-up.
+
+**`.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()` added ahead of the route table.**
+Spring Security 6's `AuthorizationFilter` runs on every dispatcher type, including `ERROR` -- the
+container's forward to `/error` for an anonymous 400/404 was falling through to
+`anyRequest().authenticated()`, so an anonymous visitor hitting, e.g., `GET /browse` with a
+missing required param, or any mistyped URL, saw a 302-to-`/login` instead of the real error --
+exactly wrong for a page this slice just made public. This is Spring Security's own documented
+fix for this exact scenario. **Left genuinely unverified by an automated test**: reproducing it
+requires a real embedded servlet container performing the forward-to-`/error`, which only happens
+outside `MockMvc` (e.g. `@SpringBootTest(webEnvironment = RANDOM_PORT)`); this repo has no such
+test infrastructure yet, and adding it was judged out of scope for a one-line security-config fix.
+`browse_should_ReturnBadRequest_When_AnonymousAndRequiredParamsAreMissing` was added as the
+adjacent, MockMvc-provable case (anonymous validation-error handling still works at all) with its
+Javadoc explicit about what it does and doesn't cover here.
+
+**`metrics` dropped from the public actuator matcher, `health` kept.** Both were equally public
+under slice 1's blanket `permitAll()`, so this isn't a regression, but this slice is where real
+authz decisions get made deliberately rather than inherited. `/actuator/metrics` exposes the full
+Micrometer registry -- per `application.yml`'s own comment, that includes Spring AI's
+chat-client/token-usage timers and counters, i.e. real operational/cost signal, to any
+unauthenticated caller. `health` (bare up/down liveness) stays public; `metrics` now falls through
+to `anyRequest().authenticated()` rather than getting a dedicated `hasRole("ADMIN")` rule --
+gating it alongside `/admin/**` was considered but not worth a role check for a route with no UI
+and no product reason to admit ordinary logged-in users either; plain authentication is the
+simpler bar and can be tightened to `ADMIN` later if a real operator-only surface forms around it.
+
+**`index.html`'s new anonymous-branch login/register links switched to `th:href="@{/login}"`/
+`th:href="@{/register}"`, matching the sibling logout `<form>`'s `th:action="@{/logout}"` two
+lines up.** Raw `href="/login"` would break if the app were ever deployed under a non-root
+context path; the Thymeleaf `@{...}` link-expression form resolves relative to the context path
+like the rest of the template already does.

@@ -243,7 +243,7 @@
             </form>
         </span>
         <span sec:authorize="isAnonymous()">
-            &nbsp;&middot; <a href="/login">Log in</a>&nbsp;/&nbsp;<a href="/register">Register</a>
+            &nbsp;&middot; <a th:href="@{/login}">Log in</a>&nbsp;/&nbsp;<a th:href="@{/register}">Register</a>
         </span>
     </span>
 </header>

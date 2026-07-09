@@ -209,6 +209,24 @@ class NameBrowserControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
+    /**
+     * Companion to browse_should_ReturnBadRequest_When_SourceIsInvalid: anonymous callers get
+     * the same validation behavior as authenticated ones now that GET /browse is public. Does
+     * NOT, by itself, cover the review finding on PR #72 about the container's ERROR-dispatched
+     * forward to /error -- MockMvc's DispatcherServlet resolves MissingServletRequestParameterException
+     * straight to a 400 response without a real servlet container's forward-to-/error, so this
+     * request never re-enters the filter chain as DispatcherType.ERROR the way it would running
+     * behind an actual embedded Tomcat. The .dispatcherTypeMatchers(DispatcherType.ERROR)
+     * .permitAll() fix in WebSecurityConfig is Spring Security's documented remediation for
+     * exactly that scenario; this repo has no @SpringBootTest(webEnvironment = RANDOM_PORT)
+     * infrastructure to exercise the real container's error-page forward, so that fix is
+     * unverified by an automated test here.
+     */
+    @Test
+    void browse_should_ReturnBadRequest_When_AnonymousAndRequiredParamsAreMissing() throws Exception {
+        mockMvc.perform(withSession(get("/browse"))).andExpect(status().isBadRequest());
+    }
+
     @Test
     void browse_should_ShowGenerateMoreButton_When_AiPoolIsBelowCapAndNotGenerating() throws Exception {
         Name aiName = mock(Name.class);

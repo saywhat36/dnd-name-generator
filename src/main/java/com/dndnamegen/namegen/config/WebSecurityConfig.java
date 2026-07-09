@@ -1,5 +1,6 @@
 package com.dndnamegen.namegen.config;
 
+import jakarta.servlet.DispatcherType;
 import org.springframework.boot.actuate.autoconfigure.security.servlet.EndpointRequest;
 import org.springframework.boot.autoconfigure.security.servlet.PathRequest;
 import org.springframework.context.annotation.Bean;
@@ -43,10 +44,17 @@ public class WebSecurityConfig {
         requestHandler.setCsrfRequestAttributeName(null);
 
         http.authorizeHttpRequests(authorize -> authorize
-                        // Viewing is public: the landing page, the htmx browse fragment, the
-                        // auth entry points themselves, static assets, and the liveness/metrics
-                        // endpoints (already unauthenticated pre-slice-7, see application.yml's
-                        // management.endpoints exposure comment -- no behavior change here).
+                        // Spring Security 6's AuthorizationFilter runs on every dispatcher type,
+                        // including ERROR -- without this, the container's forward to /error for
+                        // an anonymous 400/404 (e.g. GET /browse with a missing required param, or
+                        // any mistyped URL) falls through to the anyRequest().authenticated()
+                        // catch-all below and 302s the visitor to /login instead of surfacing the
+                        // real error, on pages this slice just made public. Caught in review on
+                        // PR #72.
+                        .dispatcherTypeMatchers(DispatcherType.ERROR)
+                        .permitAll()
+                        // Viewing is public: the landing page, the htmx browse fragment, and the
+                        // auth entry points themselves.
                         .requestMatchers(
                                 new AntPathRequestMatcher("/", "GET"),
                                 new AntPathRequestMatcher("/browse", "GET"),
@@ -54,7 +62,15 @@ public class WebSecurityConfig {
                                 new AntPathRequestMatcher("/register", "GET"),
                                 new AntPathRequestMatcher("/register", "POST"))
                         .permitAll()
-                        .requestMatchers(EndpointRequest.to("health", "metrics"))
+                        // health is a liveness check, safe to leave public (already unauthenticated
+                        // pre-slice-7, see application.yml's management.endpoints exposure comment
+                        // -- no behavior change here). metrics is deliberately NOT included here,
+                        // unlike health -- it exposes the full Micrometer registry, including Spring
+                        // AI's chat-client/token-usage timers/counters (operational/cost signal), to
+                        // any caller. It falls through to anyRequest().authenticated() below instead.
+                        // Flagged in review on PR #72; was already anonymous-accessible under slice
+                        // 1's blanket permitAll() but this is the slice that establishes real authz.
+                        .requestMatchers(EndpointRequest.to("health"))
                         .permitAll()
                         .requestMatchers(PathRequest.toStaticResources().atCommonLocations())
                         .permitAll()
