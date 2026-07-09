@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -36,6 +37,8 @@ class NameSubmissionRepositoryIT {
     @Autowired private NameSubmissionRepository nameSubmissionRepository;
 
     @Autowired private UserRepository userRepository;
+
+    @Autowired private JdbcTemplate jdbcTemplate;
 
     @AfterEach
     void cleanUp() {
@@ -73,5 +76,49 @@ class NameSubmissionRepositoryIT {
         assertThatThrownBy(() -> nameSubmissionRepository.saveAndFlush(
                         new NameSubmission(submitter.getId(), "aelar", Race.ELF, Gender.MASCULINE)))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void save_should_PersistSubmission_When_RaceIsHalfOrc() {
+        // Regression: HALF_ORC is a valid Race but was missing from the migration's race CHECK,
+        // so a half-orc submission failed at insert. @Enumerated(STRING) persists the literal
+        // "HALF_ORC", which the CHECK must now permit.
+        User submitter =
+                userRepository.saveAndFlush(new User("HalfOrcSubmitter", "{bcrypt}$2a$10$submissionsubmissionsubmiss3"));
+
+        NameSubmission saved = nameSubmissionRepository.saveAndFlush(
+                new NameSubmission(submitter.getId(), "Grommash", Race.HALF_ORC, Gender.MASCULINE));
+
+        assertThat(nameSubmissionRepository.findById(saved.getId()))
+                .get()
+                .extracting(NameSubmission::getRace)
+                .isEqualTo(Race.HALF_ORC);
+    }
+
+    @Test
+    void insert_should_AllowMultipleResolvedRows_When_TheyShareNormalizedNameRaceAndGender() {
+        // The uniqueness key is a partial index scoped to WHERE status = 'PENDING', so any number
+        // of resolved (APPROVED/REJECTED) rows for the same (name, race, gender) may coexist --
+        // this is what lets a rejected name be resubmitted and rejected again without colliding.
+        // Inserted natively because the entity constructor only ever produces PENDING rows (no
+        // status setter until the moderation slice lands).
+        User submitter =
+                userRepository.saveAndFlush(new User("Rejecter", "{bcrypt}$2a$10$submissionsubmissionsubmiss4"));
+
+        insertResolved(submitter.getId(), "aelar", "REJECTED");
+        insertResolved(submitter.getId(), "aelar", "REJECTED");
+
+        assertThat(nameSubmissionRepository.count()).isEqualTo(2);
+    }
+
+    private void insertResolved(Long submitterId, String normalized, String status) {
+        jdbcTemplate.update(
+                "INSERT INTO name_submissions "
+                        + "(display_name, normalized_name, race, gender, status, submitter_id, created_at) "
+                        + "VALUES (?, ?, 'ELF', 'MASCULINE', ?, ?, now())",
+                normalized,
+                normalized,
+                status,
+                submitterId);
     }
 }

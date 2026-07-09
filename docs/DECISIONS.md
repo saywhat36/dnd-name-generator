@@ -2487,3 +2487,36 @@ explicitly -- it's the first slice test that has to distinguish role-based autho
 authentication, and nothing about `@WebMvcTest`'s auto-detection guarantees that distinction (every
 earlier route only ever needed to tell authenticated apart from anonymous). `NameServiceTest`
 gained matching `rejectName`/`unflagName` cases mirroring the existing `flagName` ones.
+
+## 2026-07-09: User-submitted names -- schema + domain foundation (PR 1)
+First slice of a user-submitted-name moderation feature: a logged-in user proposes a name, it
+enters a PENDING queue, an admin approves (it becomes a live everyone-visible name) or rejects it.
+This slice lands only the persistence primitives -- `name_submissions` table (V7), the
+`NameSubmission` entity, `SubmissionStatus`, and an empty repository -- with no endpoints yet, the
+same "primitives before behavior" shape slices 2/6 used.
+
+**Separate `name_submissions` table, not PENDING rows in `names`.** The `names` uniqueness key
+`(normalized_name, race, gender)` spans every status, so a pending duplicate of any existing name
+(even a curated one) would fail on insert, and pending rows would pollute the serving index. A
+distinct signal table mirrors how `name_reports` is kept separate. Approval is the moment a row is
+inserted into `names` (a later slice), reusing `NameInsertDao`'s existing `ON CONFLICT DO NOTHING`
+guarantee.
+
+**"One open submission" is a partial unique index, not a composite UNIQUE including `status`.** The
+first cut used `UNIQUE (normalized_name, race, gender, status)`. That does keep pending duplicates
+out, but it also caps APPROVED and REJECTED rows at one apiece -- so rejecting a name that was
+rejected, resubmitted, and rejected again collides with the earlier REJECTED row and the moderation
+action fails. Replaced with `CREATE UNIQUE INDEX ... WHERE status = 'PENDING'`, which enforces "at
+most one open submission per (name, race, gender)" while leaving any number of resolved rows. A
+partial index can't be expressed as a table `CONSTRAINT`, hence the standalone index.
+`NameSubmissionRepositoryIT` covers both the PENDING-collision reject and the multiple-resolved-rows
+allow (the latter inserted natively, since the entity constructor only ever produces PENDING rows).
+
+**Correction: `HALF_ORC` was missing from every race CHECK.** `Race` grew a `HALF_ORC` value, but
+V1's note that "a migration adding a race must update both CHECK constraints" was never honored --
+`names` and `generation_log` had silently rejected half-orcs since, and the browse UI already
+offers the option (`index.html` iterates `Race.values()`). V7 ships the full nine-race list, and
+V8 backfills the `names`/`generation_log` CHECKs so an approved half-orc submission can actually
+land in `names` in the later approval slice. `reviewer_id` is indexed alongside `submitter_id` --
+both are FK-referencing columns, which Postgres never auto-indexes (V4 `idx_favorites_owner_id`
+precedent), and the first cut backed only one of them.
