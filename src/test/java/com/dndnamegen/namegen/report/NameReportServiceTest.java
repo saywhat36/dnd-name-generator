@@ -95,4 +95,17 @@ class NameReportServiceTest {
 
         assertThat(result).isEmpty();
     }
+
+    /**
+     * Slice 7: the browse pages are public, so getReportedNameIds may now be called with an
+     * anonymous Identity (see docs/DECISIONS.md) -- matches FavoriteServiceTest's equivalent
+     * case.
+     */
+    @Test
+    void getReportedNameIds_should_ReturnEmptySet_When_IdentityIsAnonymous() {
+        Set<Long> result = nameReportService.getReportedNameIds(Identity.anonymous("session-1"));
+
+        assertThat(result).isEmpty();
+        verify(nameReportRepository, never()).findNameIdByOwnerId(any());
+    }
 }

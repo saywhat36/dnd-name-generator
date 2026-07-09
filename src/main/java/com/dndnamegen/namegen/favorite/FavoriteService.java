@@ -80,9 +80,16 @@ public class FavoriteService {
     /**
      * Used by the browse page to mark already-favorited names on initial render -- a Set
      * since callers only need membership per name id, not order or the Favorite rows
-     * themselves (see listFavorites for the ordered, full-row variant).
+     * themselves (see listFavorites for the ordered, full-row variant). The browse routes are
+     * public as of slice 7, so {@code identity} may be anonymous here (unlike every other
+     * caller in this class, which only ever runs behind the authenticated-only favorites
+     * routes) -- an anonymous visitor has favorited nothing, so this short-circuits to an empty
+     * set rather than querying with a null owner id.
      */
     public Set<Long> getFavoritedNameIds(Identity identity) {
+        if (!identity.isAuthenticated()) {
+            return Set.of();
+        }
         return Set.copyOf(favoriteRepository.findNameIdByOwnerId(identity.ownerId()));
     }
 }

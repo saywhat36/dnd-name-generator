@@ -2266,3 +2266,100 @@ non-Testcontainers classes (`NameReportServiceTest`) passes locally; `UserReposi
 fails to start against the local Docker daemon's API version (`client version 1.32 is too old`),
 an environment gap unrelated to this change and consistent with the JDK 26/Mockito gap noted in
 earlier slices' decision logs.
+
+## 2026-07-09: Slice 7 -- route-level security (public read, authenticated write) + reversing the slice-5 "full lockdown" of the browse pages
+
+**The product rule, enforced route-level for the first time.** Every route was still
+`anyRequest().permitAll()` since slice 1 (a deliberate stopgap -- see that entry). This slice
+replaces it with `WebSecurityConfig`'s real route table: `GET /`, `GET /browse`, `GET /login`,
+`GET /register`, `POST /register`, static assets, and the `health`/`metrics` actuator endpoints
+are `permitAll()`; `POST /browse/generate-more`, `POST`/`GET`/`DELETE /favorites`, and
+`POST /reports` are `.authenticated()`; `/admin/**` is `.hasRole("ADMIN")` as a placeholder (no
+controller yet -- slice 9). Everything else falls through to `anyRequest().authenticated()` --
+secure by default for any route this slice didn't explicitly reason about, including
+`POST /logout` (already only meaningful for a logged-in user) and `WebSecurityConfigTest`'s
+arbitrarily-picked `/names/1/flag`, which now doubles as the catch-all's test case.
+
+**This reverses the slice-5 revision's "full lockdown" of `GET /`/`GET /browse` -- deliberately,
+not as an oversight.** That entry locked the browse pages behind authentication specifically
+because `Identity` had no anonymous shape at the time, and building one just for the browse
+page's read-only id-membership check was explicitly rejected as introducing "two different
+notions of current identity." The product requirement this slice implements -- viewing is
+public -- makes that tradeoff no longer available: the browse pages have to render for an
+anonymous visitor. Re-adding the anonymous `Identity` shape was evaluated against the
+alternative (leave browse pages behind login, override the "public browse" part of the given
+spec) and rejected: "viewing requires an account" is not what any name-generator product wants,
+and the spec is explicit that this is the actual product rule now, not a nice-to-have.
+
+**`Identity` regains an anonymous shape (`Identity.anonymous(sessionId)`, `ownerId` nullable,
+`isAuthenticated()`), but narrower than the pre-slice-5 `Identity.ofSession(...)` this echoes.**
+The earlier shape existed to key favorites/reports on session id when anonymous; this one exists
+purely so `NameBrowserController.populateBrowser` can resolve *an* `Identity` for an anonymous
+GET without throwing. Favorites and reports themselves are unaffected: those routes stay
+authenticated-only end to end (filter chain + `@PreAuthorize`), so `FavoriteService`/
+`NameReportService`'s mutating methods (`addFavorite`, `removeFavorite`, `listFavorites`,
+`reportName`) keep assuming a non-null `ownerId` exactly as before -- no anonymous-owner branch
+was added there because route-level security guarantees they never see one. Only the two
+browse-page read helpers (`getFavoritedNameIds`, `getReportedNameIds`) gained an explicit
+`if (!identity.isAuthenticated()) return Set.of();` short-circuit, since those are the only
+methods a public route actually calls with a possibly-anonymous `Identity`.
+
+**`CurrentIdentityArgumentResolver` no longer throws `InsufficientAuthenticationException` for
+an unauthenticated request -- it returns `Identity.anonymous(sessionId)` instead.** Route-level
+security is now the actual gate for favorites/reports/generate-more; the resolver throwing was
+only ever a workaround for the absence of that gate (see the full-lockdown entry's own
+reasoning: "route-level enforcement ... is still ROADMAP.md's open item ... but the identity
+layer already assumes and requires that world now"). That workaround is retired now that the
+real mechanism exists.
+
+**htmx-aware `AuthenticationEntryPoint` (`HtmxAuthenticationEntryPoint`).** The default
+`LoginUrlAuthenticationEntryPoint` 302s to `/login`; htmx's `fetch`-based requests follow a 302
+transparently and swap the resulting HTML response into whatever element issued the request --
+for an anonymous `POST /favorites` or `POST /browse/generate-more`, that means the full
+`login.html` document lands nested inside a name row or the browser fragment. The fix checks for
+the `HX-Request` header (sent automatically on every htmx-issued request): if present, respond
+`401` with an `HX-Redirect: /login` header instead, which tells htmx to perform a real
+`window.location` navigation rather than a swap. Every other (ordinary browser navigation)
+request falls through to the normal `LoginUrlAuthenticationEntryPoint` 302. Wired via
+`.exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(new
+HtmxAuthenticationEntryPoint()))` in `WebSecurityConfig`.
+
+**Belt-and-braces `@PreAuthorize("isAuthenticated()")` on every mutating controller method**
+(`FavoriteController.addFavorite`/`removeFavorite`/`listFavorites`, `NameReportController
+.reportName`, `NameBrowserController.generateMore`) -- `@EnableMethodSecurity` added to
+`WebSecurityConfig` to activate it. The filter chain is the primary, actually-load-bearing gate;
+this is a second, independent check that keeps rejecting a direct call to one of these methods
+even if a route matcher in `WebSecurityConfig` is ever misconfigured or the matcher list drifts
+out of sync with the controller mappings. Not relied on as the only defense, per the slice brief.
+
+**`index.html`'s header markup regains the `sec:authorize` conditional it lost in the slice-5
+PR-review follow-up.** That follow-up correctly dropped the conditional because `GET /` could
+only ever be reached authenticated at the time -- the "Signed in as ... Log out" branch was the
+only reachable state. Now that `GET /` is public again, an anonymous visitor reaching it would
+otherwise see an empty "Signed in as" (blank `sec:authentication="name"`) with a Log out button
+that does nothing useful. Restored as two `sec:authorize` branches: `isAuthenticated()` renders
+the existing "Signed in as ... Log out" markup unchanged; `isAnonymous()` renders "Log in /
+Register" links. The per-name favorite/report buttons in the `#browser` fragment are
+deliberately left as-is (not hidden for anonymous visitors) -- hiding them for anonymous users is
+explicitly out of scope for this slice (`ROADMAP.md`'s next item); clicking one from a
+still-visible button today correctly round-trips through the htmx entry point above.
+
+**Testing.** `WebSecurityConfigTest` gained the route-level/htmx-entry-point cases against its
+existing `/names/1/flag` slice (redirect for an anonymous browser request, 401+`HX-Redirect` for
+an anonymous htmx request) and had its pre-existing CSRF-present case fixed to authenticate --
+that route now falls under `anyRequest().authenticated()`, so the old anonymous-but-CSRF'd
+request would otherwise 3xx instead of returning 204. `CurrentIdentityArgumentResolverTest`'s two
+throwing cases became two anonymous-identity-returned cases. `NameBrowserControllerTest` gained
+`index_should_Return2xx_When_Anonymous`, `browse_should_Return2xx_When_Anonymous`, and
+`generateMore_should_Return401WithHxRedirect_When_AnonymousHtmxRequest`, and its `@BeforeEach`
+now stubs both the owner and anonymous `Identity` shapes against `favoriteService`/
+`nameReportService` since a public route can now resolve either.
+`FavoriteControllerTest`/`NameReportControllerTest`'s existing unauthenticated-redirect cases
+needed no behavioral change (filter-chain rejection redirects the same way resolver-thrown
+rejection used to), just renamed/re-explained. `FavoriteServiceTest`/`NameReportServiceTest`
+each gained a case for the new anonymous-identity short-circuit on the browse-page read helpers.
+`./mvnw test-compile` confirms everything compiles; `./mvnw test` hits the same pre-existing
+JDK 26/Mockito inline-mock-maker gap as every prior slice (confirmed identical failure count on
+`main` before this change, via `git stash`) -- the plain-mock tests unaffected by that gap
+(`CurrentIdentityArgumentResolverTest`, most of `FavoriteServiceTest`/`NameReportServiceTest`)
+pass locally, including all the new cases above.

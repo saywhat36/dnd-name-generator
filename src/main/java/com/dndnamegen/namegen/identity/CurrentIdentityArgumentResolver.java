@@ -4,7 +4,6 @@ import com.dndnamegen.namegen.session.SessionIdFilter;
 import com.dndnamegen.namegen.user.AppUserDetails;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.MethodParameter;
-import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.support.WebDataBinderFactory;
@@ -13,14 +12,15 @@ import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
 /**
- * Resolves an {@link Identity} controller parameter for endpoints that require an authenticated
- * request -- favorites, reports, and the browse pages all require login now, with no anonymous
- * fallback (see docs/DECISIONS.md, identity resolution slice revision). Throws
- * {@link InsufficientAuthenticationException} when the principal is missing or is Spring
- * Security's anonymous-authentication placeholder, rather than the {@link
- * AppUserDetails} this resolver requires -- route-level enforcement (redirecting unauthenticated
- * requests to login before they ever reach a controller) is Roadmap Phase 2's still-open
- * "Route-level security" item, tracked separately.
+ * Resolves an {@link Identity} controller parameter for both the public browse routes and the
+ * authenticated-only favorites/reports routes. Returns {@link Identity#anonymous(String)} when
+ * there is no authenticated {@link AppUserDetails} principal, rather than throwing, as of slice
+ * 7 (see docs/DECISIONS.md) -- route-level security (the filter chain in {@code
+ * WebSecurityConfig}, backed by {@code @PreAuthorize} on the mutating controller methods) is now
+ * the actual gate for favorites/reports, so those controllers never reach this resolver as an
+ * anonymous request; it can afford to be tolerant here so the now-public {@code
+ * NameBrowserController} routes get a usable (if ownerless) {@code Identity} instead of a
+ * forced redirect to {@code /login} just to view names.
  */
 public class CurrentIdentityArgumentResolver implements HandlerMethodArgumentResolver {
 
@@ -42,9 +42,7 @@ public class CurrentIdentityArgumentResolver implements HandlerMethodArgumentRes
         if (authentication == null
                 || !authentication.isAuthenticated()
                 || !(authentication.getPrincipal() instanceof AppUserDetails principal)) {
-            throw new InsufficientAuthenticationException(
-                    "Identity resolution requires an authenticated request; anonymous access is no"
-                            + " longer supported for this endpoint");
+            return Identity.anonymous(sessionId);
         }
         return Identity.of(principal.getOwnerId(), sessionId);
     }

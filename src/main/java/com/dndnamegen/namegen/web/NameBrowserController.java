@@ -11,6 +11,7 @@ import com.dndnamegen.namegen.name.NameSourceFilter;
 import com.dndnamegen.namegen.name.Race;
 import com.dndnamegen.namegen.report.NameReportService;
 import java.util.List;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -88,6 +89,7 @@ public class NameBrowserController {
      * polls hit GET /browse, which reads the real (by-then-accurate) flag.
      */
     @PostMapping("/browse/generate-more")
+    @PreAuthorize("isAuthenticated()")
     public String generateMore(
             @RequestParam Race race,
             @RequestParam Gender gender,

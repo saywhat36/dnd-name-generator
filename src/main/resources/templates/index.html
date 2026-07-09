@@ -236,11 +236,14 @@
         <a href="#works">
             <span class="swap"><span>Names</span><span aria-hidden="true">Names</span></span>&nbsp;&darr;
         </a>
-        <span>
+        <span sec:authorize="isAuthenticated()">
             &nbsp;&middot; Signed in as <span sec:authentication="name"></span>&nbsp;&middot;
             <form class="logout-form" th:action="@{/logout}" method="post">
                 <button type="submit" class="link-button">Log out</button>
             </form>
+        </span>
+        <span sec:authorize="isAnonymous()">
+            &nbsp;&middot; <a href="/login">Log in</a>&nbsp;/&nbsp;<a href="/register">Register</a>
         </span>
     </span>
 </header>
