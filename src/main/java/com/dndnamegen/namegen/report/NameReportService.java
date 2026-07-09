@@ -1,5 +1,6 @@
 package com.dndnamegen.namegen.report;
 
+import com.dndnamegen.namegen.identity.Identity;
 import java.util.Set;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -7,6 +8,14 @@ import org.springframework.stereotype.Service;
 /**
  * Records a raw report signal, keyed on session_id, per docs/ARCHITECTURE.md -- a report is
  * not an automatic status change; flagging to FLAGGED is a separate, not-yet-built action.
+ *
+ * <p>Deliberately still session-keyed, not owner-keyed, even though reports now require an
+ * authenticated request the same as favorites do: {@code name_reports.session_id} is {@code
+ * NOT NULL} with no {@code owner_id} column, and {@link Identity#sessionId()} is always
+ * populated (by {@code SessionIdFilter}, independent of authentication), so there is no gap to
+ * fill by adding owner_id here. See docs/DECISIONS.md, identity resolution slice, for why this
+ * is a deliberate scope decision rather than an oversight -- adding owner_id to reports is a
+ * clean follow-up, but it's not in the Phase 2 roadmap.
  */
 @Service
 public class NameReportService {
@@ -25,7 +34,8 @@ public class NameReportService {
      * reason -- matches FavoriteService.addFavorite's idempotent-add pattern, including the
      * same catch-and-reread handling for a concurrent-report race off the unique constraint.
      */
-    public NameReport reportName(String sessionId, Long nameId, String reason) {
+    public NameReport reportName(Identity identity, Long nameId, String reason) {
+        String sessionId = identity.sessionId();
         return nameReportRepository
                 .findBySessionIdAndNameId(sessionId, nameId)
                 .orElseGet(() -> saveNew(sessionId, nameId, reason));
@@ -45,7 +55,7 @@ public class NameReportService {
      * Used by the browse page to mark already-reported names on initial render. Matches
      * FavoriteService.getFavoritedNameIds's shape -- membership only, no ordering needed.
      */
-    public Set<Long> getReportedNameIds(String sessionId) {
-        return Set.copyOf(nameReportRepository.findNameIdBySessionId(sessionId));
+    public Set<Long> getReportedNameIds(Identity identity) {
+        return Set.copyOf(nameReportRepository.findNameIdBySessionId(identity.sessionId()));
     }
 }

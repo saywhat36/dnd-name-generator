@@ -1,8 +1,7 @@
 package com.dndnamegen.namegen.report;
 
+import com.dndnamegen.namegen.identity.Identity;
 import com.dndnamegen.namegen.name.NameRepository;
-import com.dndnamegen.namegen.session.SessionIdFilter;
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -33,9 +32,9 @@ public class NameReportController {
     @PostMapping("/reports")
     @ResponseStatus(HttpStatus.CREATED)
     public void reportName(
-            @RequestParam Long nameId, @RequestParam(required = false) String reason, HttpServletRequest request) {
+            @RequestParam Long nameId, @RequestParam(required = false) String reason, Identity identity) {
         requireNameExists(nameId);
-        nameReportService.reportName(sessionId(request), nameId, normalizeReason(reason));
+        nameReportService.reportName(identity, nameId, normalizeReason(reason));
     }
 
     private void requireNameExists(Long nameId) {
@@ -57,9 +56,5 @@ public class NameReportController {
                     HttpStatus.BAD_REQUEST, "reason must be at most " + MAX_REASON_LENGTH + " characters");
         }
         return reason;
-    }
-
-    private String sessionId(HttpServletRequest request) {
-        return (String) request.getAttribute(SessionIdFilter.REQUEST_ATTRIBUTE);
     }
 }

@@ -1,5 +1,6 @@
 package com.dndnamegen.namegen.favorite;
 
+import com.dndnamegen.namegen.identity.Identity;
 import com.dndnamegen.namegen.name.Name;
 import com.dndnamegen.namegen.name.NameRepository;
 import java.util.List;
@@ -13,8 +14,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Add/remove/list favorites, keyed on session_id per docs/ARCHITECTURE.md
- * ("favorites" table) -- owner_id stays unpopulated until Phase 2 auth exists.
+ * Add/remove/list favorites, keyed on {@link Identity#ownerId()} -- there is no anonymous
+ * fallback (see docs/DECISIONS.md, identity resolution slice revision): favorites require an
+ * authenticated request, so {@code Identity} always carries an owner id here.
  */
 @Service
 public class FavoriteService {
@@ -28,36 +30,34 @@ public class FavoriteService {
     }
 
     /**
-     * Idempotent: returns the existing row if this name is already favorited by this
-     * session. A single-row save() here is not the NameInsertDao batch-poisoning scenario --
-     * a duplicate-insert race just throws a catchable DataIntegrityViolationException off the
-     * (session_id, name_id) unique constraint, handled by re-reading the row the other writer
+     * Idempotent: returns the existing row if this owner already favorited this name. A
+     * single-row save() here is not the NameInsertDao batch-poisoning scenario -- a
+     * duplicate-insert race just throws a catchable DataIntegrityViolationException off the
+     * (owner_id, name_id) unique constraint, handled by re-reading the row the other writer
      * just inserted.
      */
-    public Favorite addFavorite(String sessionId, Long nameId) {
+    public Favorite addFavorite(Identity identity, Long nameId) {
         return favoriteRepository
-                .findBySessionIdAndNameId(sessionId, nameId)
-                .orElseGet(() -> saveNew(sessionId, nameId));
+                .findByOwnerIdAndNameId(identity.ownerId(), nameId)
+                .orElseGet(() -> saveNew(identity.ownerId(), nameId));
     }
 
-    private Favorite saveNew(String sessionId, Long nameId) {
+    private Favorite saveNew(Long ownerId, Long nameId) {
         try {
-            return favoriteRepository.save(new Favorite(sessionId, nameId));
+            return favoriteRepository.save(new Favorite(ownerId, nameId));
         } catch (DataIntegrityViolationException e) {
-            return favoriteRepository
-                    .findBySessionIdAndNameId(sessionId, nameId)
-                    .orElseThrow(() -> e);
+            return favoriteRepository.findByOwnerIdAndNameId(ownerId, nameId).orElseThrow(() -> e);
         }
     }
 
     /**
-     * @Transactional here because deleteBySessionIdAndNameId is a derived delete query, which
+     * @Transactional here because deleteByOwnerIdAndNameId is a derived delete query, which
      * Spring Data requires to run inside a transaction (see NameService.flagName for the same
      * pattern with an explicit @Modifying query).
      */
     @Transactional
-    public void removeFavorite(String sessionId, Long nameId) {
-        favoriteRepository.deleteBySessionIdAndNameId(sessionId, nameId);
+    public void removeFavorite(Identity identity, Long nameId) {
+        favoriteRepository.deleteByOwnerIdAndNameId(identity.ownerId(), nameId);
     }
 
     /**
@@ -67,8 +67,8 @@ public class FavoriteService {
      * are dropped rather than left as a null entry -- FavoriteController maps this list
      * straight into NameResponse, which would NPE on a null Name otherwise.
      */
-    public List<Name> listFavorites(String sessionId) {
-        List<Favorite> favorites = favoriteRepository.findBySessionIdOrderByCreatedAtDescIdDesc(sessionId);
+    public List<Name> listFavorites(Identity identity) {
+        List<Favorite> favorites = favoriteRepository.findByOwnerIdOrderByCreatedAtDescIdDesc(identity.ownerId());
         List<Long> orderedNameIds = favorites.stream().map(Favorite::getNameId).toList();
 
         Map<Long, Name> namesById =
@@ -82,7 +82,7 @@ public class FavoriteService {
      * since callers only need membership per name id, not order or the Favorite rows
      * themselves (see listFavorites for the ordered, full-row variant).
      */
-    public Set<Long> getFavoritedNameIds(String sessionId) {
-        return Set.copyOf(favoriteRepository.findNameIdBySessionId(sessionId));
+    public Set<Long> getFavoritedNameIds(Identity identity) {
+        return Set.copyOf(favoriteRepository.findNameIdByOwnerId(identity.ownerId()));
     }
 }

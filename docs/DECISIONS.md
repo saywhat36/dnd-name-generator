@@ -2019,3 +2019,180 @@ three Spring-context tests in `LoginLogoutTest` specifically -- `DbUserDetailsSe
 mocks run and pass locally with no such gap. `./mvnw test-compile` confirms everything compiles;
 the manual `curl` verification above is what actually exercises the `LoginLogoutTest` assertions in
 this environment.
+
+## 2026-07-09: Identity resolution (slice 5) -- unified owner_id/session_id identity for favorites/reports
+Fifth slice of the security rollout: stops `FavoriteController`, `NameReportController`, and
+`NameBrowserController.populateBrowser` from reaching for the raw `sessionId` request attribute
+directly, replacing it with a resolved `Identity` that's `owner_id`-keyed once a request is
+authenticated and `session_id`-keyed otherwise.
+
+**`Identity` (`identity/Identity.java`) always carries a `sessionId`, and optionally an
+`ownerId`.** `SessionIdFilter` mints/reads its cookie unconditionally on every request regardless
+of authentication state (confirmed in slice 4's decision log), so `sessionId` is never null.
+`ownerId` is only set once `CurrentIdentityArgumentResolver` finds an authenticated
+`AppUserDetails` principal in the `SecurityContext`. `isAuthenticated()` is the single branch
+point both services use -- there is no separate "session-keyed" vs. "owner-keyed" method pair;
+`FavoriteService`/`NameReportService` take an `Identity` and pick the right repository calls
+internally.
+
+**`AppUserDetails` (`user/AppUserDetails.java`) extends Spring Security's `User`, adding an
+`ownerId` field.** The stock `User` principal has no room for the `users.id` row id -- only
+username/password/authorities -- and `Authentication.getName()` (the username) isn't a stable or
+efficient key for repository lookups. `DbUserDetailsService.loadUserByUsername` now returns an
+`AppUserDetails` instead of `User.builder()...build()`; `CurrentIdentityArgumentResolver` checks
+`authentication.getPrincipal() instanceof AppUserDetails` to distinguish a real authenticated user
+from Spring Security's anonymous-authentication placeholder (whose principal is the string
+`"anonymousUser"`, and whose `isAuthenticated()` is `true` -- an `instanceof` check on the
+principal type is what actually distinguishes the two, not `isAuthenticated()` alone).
+
+**`CurrentIdentityArgumentResolver` (`identity/`) is a `HandlerMethodArgumentResolver`, registered
+via a new `WebMvcConfig` (`config/`).** This is the first `HandlerMethodArgumentResolver` and the
+first `WebMvcConfigurer` in the codebase -- both are picked up automatically by `@WebMvcTest`
+slices (Spring Boot's test-slice filter includes `WebMvcConfigurer` beans), so no test wiring
+changes were needed beyond what `FavoriteControllerTest`/`NameReportControllerTest`/
+`NameBrowserControllerTest` already had for `SessionIdFilter`.
+
+**Favorites go owner-keyed once authenticated; `FavoriteRepository` gained
+`findByOwnerIdAndNameId`/`deleteByOwnerIdAndNameId`/`findByOwnerIdOrderByCreatedAtDescIdDesc`/
+`findNameIdByOwnerId` mirroring the existing session-keyed methods, and `Favorite` gained a second
+constructor, `Favorite(Long ownerId, Long nameId)`.** `FavoriteService`'s four public methods
+(`addFavorite`/`removeFavorite`/`listFavorites`/`getFavoritedNameIds`) each branch on
+`identity.isAuthenticated()` rather than exposing an owner-keyed method alongside every
+session-keyed one -- every operation's shape (idempotent add with the same
+find-then-insert-then-reread-on-conflict pattern, ordered list, id-set membership check) is
+otherwise identical between the two, so branching internally avoids duplicating that shape twice
+per method. `V5__favorites_owner_unique.sql` adds `UNIQUE (owner_id, name_id)` on `favorites` --
+`ROADMAP.md`'s Phase 2 already called this out as needed before an owner-keyed write path could
+exist, since `addFavorite`'s idempotent-insert-race handling depends on a DB-level uniqueness
+guarantee the same way the session-keyed path already leans on `uq_favorites_session_name`. A
+plain (non-partial) `UNIQUE` constraint is correct here despite `owner_id` being nullable --
+Postgres treats `NULL` as distinct from every other `NULL` for uniqueness purposes, so anonymous
+rows never spuriously collide with each other under this constraint.
+
+**Reports deliberately stay session-keyed even for an authenticated `Identity` -- not an
+oversight.** `name_reports.session_id` is `NOT NULL` with no `owner_id` column, and adding one is
+explicitly out of scope for this slice (would need its own migration, repository methods, and a
+decision about backfilling existing rows -- none of which the Phase 2 roadmap called for).
+Because `Identity.sessionId()` is always populated regardless of authentication state,
+`NameReportService.reportName`/`getReportedNameIds` simply always read `identity.sessionId()` and
+ignore `ownerId` entirely -- a logged-in user's reports still land against the same session id
+their anonymous browsing would have used. Adding `owner_id` to `name_reports` is a clean,
+self-contained follow-up if ever wanted, tracked as a note in `NameReportService`'s class Javadoc
+rather than a `ROADMAP.md` line item, since it was never on the roadmap to begin with.
+
+**`ROADMAP.md`'s "Migrate `favorites.owner_id` ... from session-keyed to user-keyed, backfilling
+..." item stays unchecked.** This slice makes new favorite writes owner-keyed once a request is
+authenticated; it does not touch existing rows written under a pre-login session id. Backfilling
+(and deciding how to merge two sessions' favorites for the same now-authenticated person) is a
+separate, still-open piece of work.
+
+**Testing.** `FavoriteServiceTest`/`NameReportServiceTest` gained an owner-keyed (or
+authenticated-but-still-session-keyed, for reports) branch alongside every existing session-keyed
+case. `FavoriteControllerTest`/`NameReportControllerTest`/`NameBrowserControllerTest` gained a
+`withOwner(...)` request builder (`spring-security-test`'s `user(UserDetails)` post-processor,
+which builds a `UsernamePasswordAuthenticationToken` from an `AppUserDetails` and marks it
+authenticated) proving an authenticated request resolves the owner-keyed identity end to end
+through the real `CurrentIdentityArgumentResolver`/`WebMvcConfig` wiring, not just at the service
+layer. New `CurrentIdentityArgumentResolverTest` (plain, no Spring context) covers all three
+resolution branches directly: no authentication, Spring Security's anonymous-authentication
+placeholder, and a real `AppUserDetails` principal. `./mvnw test-compile` confirms everything
+compiles. `./mvnw test` was run locally to check for regressions: every `@WebMvcTest` class in the
+whole suite (not just the ones touched here -- `RegistrationControllerTest` included) fails to
+load its `ApplicationContext` on this machine, and `FavoriteServiceTest`'s two pre-existing
+`mock(Name.class)`-based cases fail the same way -- all off the same pre-existing local JDK
+26/Mockito inline-mock-maker gap noted in slice 4's decision log (Byte Buddy does not yet support
+JDK 26; the gap applies to mocking any concrete class, not anything specific to this slice). The
+new plain-mock tests that don't hit that gap (`NameReportServiceTest`,
+`CurrentIdentityArgumentResolverTest`, most of `FavoriteServiceTest`) pass locally.
+
+## 2026-07-09: Identity resolution revision -- no anonymous fallback, full lockdown
+Revises the slice above before it ever merged: there is no anonymous path for favorites,
+reports, or the browse pages at all -- every one of those endpoints requires an authenticated
+request. This is a simplification, not an addition: it removes a branch rather than adding one.
+
+**`Identity` collapsed to a single shape: `Identity.of(ownerId, sessionId)`, both non-null.**
+`Identity.ofSession(...)`/`isAuthenticated()` are gone -- there is no longer a second shape to
+distinguish. `ownerId` is still required precisely because favorites are owner-keyed;
+`sessionId` is still carried alongside it purely because `NameReportService` still writes to
+`name_reports.session_id` (unchanged reasoning from the slice above -- that table has no
+`owner_id` column and wasn't in scope to migrate).
+
+**`CurrentIdentityArgumentResolver` now throws `InsufficientAuthenticationException` instead of
+falling back to a session-only `Identity`.** No authenticated `AppUserDetails` principal (either
+no `Authentication` at all, or Spring Security's anonymous-authentication placeholder) is
+rejected outright. Chosen over a plain `IllegalStateException` because
+`ExceptionTranslationFilter` already knows how to handle `AuthenticationException` subtypes --
+with `formLogin` configured and no custom `AuthenticationEntryPoint`, the practical effect is a
+redirect to `/login`, which is the right behavior for a request the app now considers to always
+require a logged-in user, even before route-level locking exists to reject it earlier.
+
+**Favorites: session-keyed code deleted outright, not just stopped calling.**
+`FavoriteRepository.findBySessionIdAndNameId`/`deleteBySessionIdAndNameId`/
+`findBySessionIdOrderByCreatedAtDescIdDesc`/`findNameIdBySessionId` and
+`Favorite`'s `(String sessionId, Long nameId)` constructor are gone -- `FavoriteService` never
+had a session-keyed path to begin with in this revision, so keeping that surface around would
+just be dead code from day one. `Favorite.sessionId` is unmapped from the entity entirely
+(`ddl-auto: validate` only requires mapped columns to exist, not the reverse, so the nullable
+`favorites.session_id` column can stay in the schema unmapped and orphaned rather than needing
+its own migration).
+
+**Full lockdown extends to the browse pages (`GET /`, `GET /browse`, `POST
+/browse/generate-more`), not just favorites/reports.** This was a genuine open question --
+`NameBrowserController.populateBrowser` reads `favoriteService.getFavoritedNameIds(identity)`/
+`nameReportService.getReportedNameIds(identity)`, both of which now require an authenticated
+`Identity`, so leaving the browse routes anonymous-accessible would have 500'd them (or, with
+the `InsufficientAuthenticationException` choice above, redirected them to `/login` anyway) the
+moment `Identity` stopped tolerating anonymous requests. The alternative -- a separate,
+non-strict identity lookup just for the browse page's read-only id-membership check, falling
+back to empty sets for anonymous visitors -- was considered and explicitly rejected: locking the
+whole app down now keeps exactly one `Identity` shape and one resolver everywhere, instead of
+two different notions of "current identity" depending on which controller asks. Route-level
+enforcement (actually rejecting the request before it reaches a controller, redirecting
+unauthenticated visitors to `/login` for every route including these) is still `ROADMAP.md`'s
+open "Route-level security" item -- slice 7 -- but the identity layer already assumes and
+requires that world now.
+
+**`docs/ARCHITECTURE.md`'s Phase 2 "Migration note" about backfilling `owner_id` onto
+session-keyed favorites is now moot, struck through in place rather than deleted.** That note
+described a real hazard for a design where favorites started session-keyed and later needed a
+one-time backfill to `owner_id` on login, including the genuine risk of a duplicate if one
+person had favorited the same name under two different pre-login sessions. Under this revision
+there are no pre-login favorites to have collected in the first place, so there is nothing to
+backfill and no duplicate risk to guard against. `ROADMAP.md`'s matching "Migrate `favorites
+.owner_id` ... backfilling with `ON CONFLICT DO NOTHING`" bullet is removed for the same reason.
+
+**`SessionIdFilter`/the `namegen_session_id` cookie is now vestigial for favorites and reports
+specifically -- left in place, not removed.** Its only remaining consumer is
+`NameReportService`'s continued use of `Identity.sessionId()` to write `name_reports.session_id`
+(still real, not vestigial). But the cookie's original purpose -- identifying an anonymous
+visitor across requests before login existed -- has no consumer left now that every relevant
+route requires authentication. It survives regardless: `RateLimitFilter` (Phase 3, still
+unregistered scaffolding) was scoped to session identity, and deciding whether it should key on
+session id or owner id belongs to that phase, not this one. Removing `SessionIdFilter` now would
+preempt that decision for no benefit.
+
+**Deferred, not done here: `DbUserDetailsService`'s hardcoded `ROLE_USER`.** It will need to read
+a real role column and map it to `ROLE_` + the role value once that column exists -- planned for
+a revised slice 6 -- but that column doesn't exist yet in this codebase, so no code change landed
+here. Noted so the hardcoding isn't mistaken for an oversight in the meantime.
+
+**Testing.** Every session-only test case across `FavoriteServiceTest`, `FavoriteControllerTest`,
+`NameReportControllerTest`, `NameBrowserControllerTest`, and `CurrentIdentityArgumentResolverTest`
+was removed or converted to authenticate, rather than kept alongside an owner-keyed case -- there
+is only one `Identity` shape to test against now. Each of those classes gained (or already had, in
+`FavoriteControllerTest`/`NameReportControllerTest`) an explicit unauthenticated-request test
+asserting a redirect to `/login`, since that is now the one legitimate "no identity" behavior left
+to cover. `./mvnw test-compile` confirms everything compiles; `./mvnw test` shows the same
+pre-existing local JDK 26/Mockito inline-mock-maker gap as before (every `@WebMvcTest` class,
+including untouched ones, and any `mock(Name.class)`-based case) -- the plain-mock tests unaffected
+by that gap (`NameReportServiceTest`, `CurrentIdentityArgumentResolverTest`, most of
+`FavoriteServiceTest`) pass locally.
+
+**PR review follow-up: `index.html`'s `sec:authorize="isAnonymous()"` "Log in / Register" header
+link was dead markup left over from before this revision, caught in review on PR #70.** Once `GET
+/` requires an authenticated request (full lockdown, above), an anonymous visitor never reaches
+`index.html` at all -- they're redirected to `/login` before Thymeleaf ever renders the page -- so
+that branch could never display, and the paired `sec:authorize="isAuthenticated()"` wrapper around
+the "Signed in as ... Log out" markup was equally always-true. Fixed by dropping both `sec:authorize`
+conditions: the header now unconditionally renders "Signed in as {username} ... Log out", since
+that's the only state `index.html` can ever be reached in now.

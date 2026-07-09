@@ -118,12 +118,24 @@ Status legend: not started / in progress / done
 - [x] Session-based auth (Spring Security form login, `DbUserDetailsService`);
   no JWT -- server-rendered app has no separate API client to hand a token to
 - [ ] Route-level security (every route is still `permitAll()`; a single
-  hardcoded `ROLE_USER` exists but nothing requires it yet)
-- [ ] Add `(owner_id, name_id)` unique constraint on `favorites`
-- [ ] Migrate `favorites.owner_id` (and memory conversation ownership,
-  if built) from session-keyed to user-keyed, backfilling with
-  `ON CONFLICT DO NOTHING` to handle the case where one person
-  favorited the same name under two different sessions pre-login
+  hardcoded `ROLE_USER` exists but nothing requires it yet -- `Identity`
+  resolution below already assumes this and rejects unauthenticated
+  requests at the identity layer, ahead of route-level enforcement)
+- [ ] `DbUserDetailsService`'s hardcoded `ROLE_USER` needs to read a real
+  role column and map it to `ROLE_` + role once that column exists
+  (planned for a revised slice 6; not yet implemented)
+- [x] `Identity` resolution (`CurrentIdentityArgumentResolver`): favorites,
+  reports, and the browse pages all require an authenticated request --
+  no anonymous fallback. Favorites are owner-keyed; `name_reports`
+  deliberately stays session-keyed since it has no `owner_id` column
+  (see `DECISIONS.md`)
+- [x] Add `(owner_id, name_id)` unique constraint on `favorites`
+- ~~Migrate `favorites.owner_id` (and memory conversation ownership, if
+  built) from session-keyed to user-keyed, backfilling with `ON CONFLICT
+  DO NOTHING` to handle the case where one person favorited the same
+  name under two different sessions pre-login~~ -- **moot**: favorites
+  require login outright now, so there are no pre-login/session-keyed
+  favorites to backfill or claim (see `DECISIONS.md`)
 
 ## Phase 3 -- Backstories + streaming (deferred)
 - [ ] Decide backstory persistence model (shared/cached on the name vs.

@@ -5,16 +5,21 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.dndnamegen.namegen.identity.Identity;
 import com.dndnamegen.namegen.name.NameRepository;
 import com.dndnamegen.namegen.session.SessionIdFilter;
+import com.dndnamegen.namegen.user.AppUserDetails;
 import jakarta.servlet.http.Cookie;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -22,6 +27,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 class NameReportControllerTest {
 
     private static final String SESSION_ID = "11111111-1111-1111-1111-111111111111";
+    private static final Identity IDENTITY = Identity.of(42L, SESSION_ID);
 
     @Autowired private MockMvc mockMvc;
 
@@ -40,42 +46,51 @@ class NameReportControllerTest {
         return builder.cookie(new Cookie(SessionIdFilter.COOKIE_NAME, SESSION_ID)).with(csrf());
     }
 
+    /**
+     * Authenticated on top of the session cookie -- reports now require an authenticated request
+     * unconditionally (no anonymous fallback, see docs/DECISIONS.md, identity resolution slice
+     * revision), even though the row itself still keys on sessionId, not ownerId.
+     */
+    private static MockHttpServletRequestBuilder withOwner(MockHttpServletRequestBuilder builder) {
+        AppUserDetails principal =
+                new AppUserDetails(42L, "gandalf", "hash", true, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        return withSession(builder).with(user(principal));
+    }
+
     @Test
     void reportName_should_ReturnCreated_When_NameExists() throws Exception {
         when(nameRepository.existsById(1L)).thenReturn(true);
 
-        mockMvc.perform(withSession(post("/reports").param("nameId", "1").param("reason", "not a real name")))
+        mockMvc.perform(withOwner(post("/reports").param("nameId", "1").param("reason", "not a real name")))
                 .andExpect(status().isCreated());
 
-        verify(nameReportService).reportName(SESSION_ID, 1L, "not a real name");
+        verify(nameReportService).reportName(IDENTITY, 1L, "not a real name");
     }
 
     @Test
     void reportName_should_ReturnCreated_When_ReasonIsOmitted() throws Exception {
         when(nameRepository.existsById(1L)).thenReturn(true);
 
-        mockMvc.perform(withSession(post("/reports").param("nameId", "1")))
-                .andExpect(status().isCreated());
+        mockMvc.perform(withOwner(post("/reports").param("nameId", "1"))).andExpect(status().isCreated());
 
-        verify(nameReportService).reportName(SESSION_ID, 1L, null);
+        verify(nameReportService).reportName(IDENTITY, 1L, null);
     }
 
     @Test
     void reportName_should_ReturnNotFound_When_NameIdDoesNotReferenceARealName() throws Exception {
         when(nameRepository.existsById(1L)).thenReturn(false);
 
-        mockMvc.perform(withSession(post("/reports").param("nameId", "1")))
-                .andExpect(status().isNotFound());
+        mockMvc.perform(withOwner(post("/reports").param("nameId", "1"))).andExpect(status().isNotFound());
     }
 
     @Test
     void reportName_should_TreatReasonAsNull_When_ReasonIsBlank() throws Exception {
         when(nameRepository.existsById(1L)).thenReturn(true);
 
-        mockMvc.perform(withSession(post("/reports").param("nameId", "1").param("reason", "   ")))
+        mockMvc.perform(withOwner(post("/reports").param("nameId", "1").param("reason", "   ")))
                 .andExpect(status().isCreated());
 
-        verify(nameReportService).reportName(SESSION_ID, 1L, null);
+        verify(nameReportService).reportName(IDENTITY, 1L, null);
     }
 
     /**
@@ -89,9 +104,20 @@ class NameReportControllerTest {
         when(nameRepository.existsById(1L)).thenReturn(true);
         String tooLong = "x".repeat(257);
 
-        mockMvc.perform(withSession(post("/reports").param("nameId", "1").param("reason", tooLong)))
+        mockMvc.perform(withOwner(post("/reports").param("nameId", "1").param("reason", tooLong)))
                 .andExpect(status().isBadRequest());
 
         verify(nameReportService, never()).reportName(any(), any(), any());
+    }
+
+    /**
+     * CurrentIdentityArgumentResolver throws InsufficientAuthenticationException when there is
+     * no authenticated principal -- see FavoriteControllerTest's equivalent test for why that
+     * manifests as a redirect to login rather than a bare 401 in this app's Spring Security
+     * configuration.
+     */
+    @Test
+    void reportName_should_RedirectToLogin_When_Unauthenticated() throws Exception {
+        mockMvc.perform(withSession(post("/reports").param("nameId", "1"))).andExpect(status().is3xxRedirection());
     }
 }

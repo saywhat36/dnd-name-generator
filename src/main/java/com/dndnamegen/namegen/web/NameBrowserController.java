@@ -2,6 +2,7 @@ package com.dndnamegen.namegen.web;
 
 import com.dndnamegen.namegen.favorite.FavoriteService;
 import com.dndnamegen.namegen.generation.PoolReplenishmentService;
+import com.dndnamegen.namegen.identity.Identity;
 import com.dndnamegen.namegen.name.Gender;
 import com.dndnamegen.namegen.name.Name;
 import com.dndnamegen.namegen.name.NameService;
@@ -9,8 +10,6 @@ import com.dndnamegen.namegen.name.NameSource;
 import com.dndnamegen.namegen.name.NameSourceFilter;
 import com.dndnamegen.namegen.name.Race;
 import com.dndnamegen.namegen.report.NameReportService;
-import com.dndnamegen.namegen.session.SessionIdFilter;
-import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -46,8 +45,8 @@ public class NameBrowserController {
     }
 
     @GetMapping("/")
-    public String index(Model model, HttpServletRequest request) {
-        populateBrowser(model, DEFAULT_RACE, DEFAULT_GENDER, DEFAULT_SOURCE, request);
+    public String index(Model model, Identity identity) {
+        populateBrowser(model, DEFAULT_RACE, DEFAULT_GENDER, DEFAULT_SOURCE, identity);
         return "index";
     }
 
@@ -57,8 +56,8 @@ public class NameBrowserController {
             @RequestParam Gender gender,
             @RequestParam(defaultValue = "CURATED") NameSourceFilter source,
             Model model,
-            HttpServletRequest request) {
-        populateBrowser(model, race, gender, source, request);
+            Identity identity) {
+        populateBrowser(model, race, gender, source, identity);
         return "index :: browser";
     }
 
@@ -94,9 +93,9 @@ public class NameBrowserController {
             @RequestParam Gender gender,
             @RequestParam(defaultValue = "CURATED") NameSourceFilter source,
             Model model,
-            HttpServletRequest request) {
+            Identity identity) {
         poolReplenishmentService.replenish(race, gender);
-        populateBrowser(model, race, gender, source, request);
+        populateBrowser(model, race, gender, source, identity);
         model.addAttribute("generatingMore", true);
         return "index :: browser";
     }
@@ -111,8 +110,7 @@ public class NameBrowserController {
      * just requested.
      */
     private void populateBrowser(
-            Model model, Race race, Gender gender, NameSourceFilter source, HttpServletRequest request) {
-        String sessionId = (String) request.getAttribute(SessionIdFilter.REQUEST_ATTRIBUTE);
+            Model model, Race race, Gender gender, NameSourceFilter source, Identity identity) {
         List<Name> names = nameService.getNames(race, gender, source);
         long aiPoolSize = names.stream().filter(n -> n.getSource() == NameSource.AI_GENERATED).count();
 
@@ -123,8 +121,8 @@ public class NameBrowserController {
         model.addAttribute("selectedGender", gender);
         model.addAttribute("selectedSource", source);
         model.addAttribute("names", names);
-        model.addAttribute("favoritedNameIds", favoriteService.getFavoritedNameIds(sessionId));
-        model.addAttribute("reportedNameIds", nameReportService.getReportedNameIds(sessionId));
+        model.addAttribute("favoritedNameIds", favoriteService.getFavoritedNameIds(identity));
+        model.addAttribute("reportedNameIds", nameReportService.getReportedNameIds(identity));
         model.addAttribute("aiPoolSize", aiPoolSize);
         model.addAttribute("aiPoolCap", poolReplenishmentService.getPoolCapPerCombo());
         model.addAttribute("generatingMore", poolReplenishmentService.isReplenishing(race, gender));
