@@ -30,6 +30,12 @@ public interface NameSubmissionRepository extends JpaRepository<NameSubmission, 
      *
      * <p>{@code Pageable} caps the row count -- {@code AdminSubmissionService}'s {@code MAX_PENDING}
      * bound, so the queue read stays fixed-cost no matter how large the backlog grows.
+     *
+     * <p>Ordered by {@code createdAt} then {@code id} -- {@code createdAt} alone has no unique
+     * tiebreaker, so two submissions landing in the same instant (plausible: both are
+     * {@code Instant.now()} at construction, not DB-generated) would order nondeterministically,
+     * making the {@code MAX_PENDING} truncation boundary and any ordering-sensitive test flaky.
+     * {@code id} is monotonically increasing (BIGSERIAL), so it's a correct, stable secondary key.
      */
     @Query(
             """
@@ -37,7 +43,7 @@ public interface NameSubmissionRepository extends JpaRepository<NameSubmission, 
                    u.username AS submitterUsername, s.createdAt AS createdAt
             FROM NameSubmission s JOIN User u ON u.id = s.submitterId
             WHERE s.status = :status
-            ORDER BY s.createdAt ASC
+            ORDER BY s.createdAt ASC, s.id ASC
             """)
     List<PendingSubmissionSummary> findPendingSummaries(@Param("status") SubmissionStatus status, Pageable pageable);
 }

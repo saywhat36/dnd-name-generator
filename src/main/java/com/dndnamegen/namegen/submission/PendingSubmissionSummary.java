@@ -6,7 +6,8 @@ import java.time.Instant;
 
 /**
  * Spring Data projection for {@link
- * NameSubmissionRepository#findPendingSummaries(org.springframework.data.domain.Pageable)}.
+ * NameSubmissionRepository#findPendingSummaries(com.dndnamegen.namegen.submission.SubmissionStatus,
+ * org.springframework.data.domain.Pageable)}.
  */
 public interface PendingSubmissionSummary {
 
