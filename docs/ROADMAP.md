@@ -176,7 +176,13 @@ series of small PRs, each independently releasable.
   Route added to the `.authenticated()` block in `WebSecurityConfig`; the
   controller bounds a blank/over-128-char `displayName` to `400` before
   the DB (see `DECISIONS.md`)
-- [ ] PR 3 -- submit UI on the browse page (htmx, authenticated-only)
+- [x] PR 3 -- submit UI on the browse page (htmx, authenticated-only): a
+  "Suggest a name" form in the `browser` fragment posts to `POST
+  /submissions` (PR 2) for the currently-selected race/gender; `hx-swap="none"`
+  + `hx-on::after-request` shows an inline confirmation and clears the
+  input, matching the report button's pattern. Purely presentational --
+  no new backend logic, no `WebSecurityConfig` change (the route already
+  requires auth as of PR 2)
 - [ ] PR 4 -- admin queue read side (`GET /admin/submissions`, `hasRole('ADMIN')`)
 - [ ] PR 5 -- `USER_SUBMITTED` `NameSource` + serving-path visibility
   (grouped with CURATED as human-authored), no writer yet

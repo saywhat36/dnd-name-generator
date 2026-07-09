@@ -191,6 +191,19 @@
         .spin{display:inline-block;animation:spin 1.8s linear infinite;color:var(--ink)}
         @keyframes spin{to{transform:rotate(360deg)}}
 
+        /* submit-a-name form */
+        .submit-name{margin-top:1.6rem}
+        .submit-form{display:flex;gap:1.2rem;align-items:baseline;flex-wrap:wrap}
+        .submit-input{
+            flex:1;min-width:12rem;max-width:24rem;
+            font:inherit;font-size:1.05rem;color:var(--ink);
+            background:none;border:none;border-bottom:1px solid var(--line);
+            padding:.3rem 0;
+        }
+        .submit-input:focus{border-bottom-color:var(--ink)}
+        .submit-confirmation{margin-top:.6rem;font-size:.85rem;color:var(--muted)}
+        .submit-confirmation em{font-family:var(--serif);font-style:italic;color:var(--ink)}
+
         /* footer */
         footer{margin-top:clamp(4rem,12vh,8rem);border-top:1px solid var(--line)}
         .outro{padding-block:clamp(2.5rem,8vh,5.5rem)}
@@ -414,13 +427,47 @@
             hx-trigger="every 2s"
             hx-target="#browser"
             hx-swap="outerHTML"><span class="spin" aria-hidden="true">※</span> Conjuring <em>five more</em>&hellip;</div>
-        <!-- Anonymous counterpart to the favorite/report/generate-more affordances above --
-             all three require authentication (route-level security + @PreAuthorize, see
-             WebSecurityConfig/NameBrowserController), so this is UI-layer defense-in-depth
-             over that server-side enforcement, not a substitute for it (see docs/DECISIONS.md,
-             slice 8). -->
+
+        <!-- Phase 2.5 PR 3: propose a name for the currently-selected race/gender. Purely
+             presentational -- POST /submissions (landed in PR 2) already enforces auth,
+             the quality gate, and duplicate checks server-side; this is just the form.
+             hx-swap="none" + hx-on::after-request mirrors the report button's inline
+             success handler (see above): on success, clear the input and reveal the
+             confirmation line rather than swapping any content in. The CSRF header is
+             attached for free by the htmx:configRequest listener in <head>, same as every
+             other htmx request on this page -- no manual token handling needed. -->
+        <div class="more submit-name" sec:authorize="isAuthenticated()">
+            <form
+                id="submit-name-form"
+                class="submit-form"
+                th:attr="hx-post=@{/submissions(race=${selectedRace},gender=${selectedGender})}"
+                hx-swap="none"
+                hx-on::after-request="if(event.detail.successful){
+                    this.reset();
+                    const c=document.getElementById('submit-confirmation');
+                    if(c){c.hidden=false;}
+                }">
+                <label class="lbl" for="submit-name-input">Suggest a name</label>
+                <input
+                    id="submit-name-input"
+                    class="submit-input"
+                    name="displayName"
+                    type="text"
+                    maxlength="128"
+                    required
+                    placeholder="e.g. Sylvaine" />
+                <button type="submit" class="act">Submit for review</button>
+            </form>
+            <p id="submit-confirmation" class="submit-confirmation" hidden>Thanks <em>&mdash; submitted for review.</em></p>
+        </div>
+
+        <!-- Anonymous counterpart to the favorite/report/generate-more/submit affordances
+             above -- all four require authentication (route-level security + @PreAuthorize,
+             see WebSecurityConfig/NameBrowserController/NameSubmissionController), so this is
+             UI-layer defense-in-depth over that server-side enforcement, not a substitute for
+             it (see docs/DECISIONS.md, slice 8). -->
         <div class="more" sec:authorize="!isAuthenticated()">
-            <a class="cta" th:href="@{/login}">Log in <em>to favorite, report, or generate new names</em><span class="mark" aria-hidden="true">※</span></a>
+            <a class="cta" th:href="@{/login}">Log in <em>to favorite, report, submit, or generate new names</em><span class="mark" aria-hidden="true">※</span></a>
         </div>
     </section>
 </div>

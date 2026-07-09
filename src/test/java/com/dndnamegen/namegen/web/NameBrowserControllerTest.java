@@ -171,6 +171,7 @@ class NameBrowserControllerTest {
                 .andExpect(content().string(not(containsString("Favourite"))))
                 .andExpect(content().string(not(containsString("Report"))))
                 .andExpect(content().string(not(containsString("Generate"))))
+                .andExpect(content().string(not(containsString("submit-name-form"))))
                 .andExpect(content().string(containsString("Log in")))
                 .andExpect(content().string(containsString("/login")));
     }
@@ -197,6 +198,7 @@ class NameBrowserControllerTest {
                 .andExpect(content().string(containsString("Favourite")))
                 .andExpect(content().string(containsString("Report")))
                 .andExpect(content().string(containsString("Generate")))
+                .andExpect(content().string(containsString("submit-name-form")))
                 .andExpect(content().string(not(containsString("Log in <em>to favorite"))));
     }
 
