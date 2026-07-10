@@ -38,14 +38,19 @@ public class AdminSubmissionService {
     }
 
     /**
-     * @param page 0-indexed. Out-of-range pages (negative, or past the last page) are not
-     *     special-cased here -- {@code Pageable}/Spring Data handles a negative page by throwing
-     *     and a too-high page by returning an empty content list, which the template already
-     *     renders as "no pending submissions" without needing a dedicated branch.
+     * @param page 0-indexed. A too-high page is handled by Spring Data itself (returns an empty
+     *     content list, which the template already renders as "no pending submissions" without a
+     *     dedicated branch) -- but a negative page is not: {@code PageRequest.of} throws
+     *     {@code IllegalArgumentException} for one, and this app has no {@code @ControllerAdvice}
+     *     mapping it to a handled response, so {@code GET /admin/submissions?page=-1} would 500.
+     *     Caught in review of #90. Clamped to 0 here (not in the controller) so every caller of
+     *     this method gets the same guarantee, and so the returned {@code PendingSubmissionsPage}
+     *     reports the page that was actually queried, not the raw (possibly negative) input.
      */
     public PendingSubmissionsPage listPendingSubmissions(int page) {
-        Page<PendingSubmissionSummary> result =
-                nameSubmissionRepository.findPendingSummaries(SubmissionStatus.PENDING, PageRequest.of(page, PAGE_SIZE));
+        int clampedPage = Math.max(0, page);
+        Page<PendingSubmissionSummary> result = nameSubmissionRepository.findPendingSummaries(
+                SubmissionStatus.PENDING, PageRequest.of(clampedPage, PAGE_SIZE));
 
         List<PendingSubmissionView> views = result.getContent().stream()
                 .map(summary -> new PendingSubmissionView(
@@ -57,7 +62,7 @@ public class AdminSubmissionService {
                         summary.getCreatedAt()))
                 .toList();
 
-        return new PendingSubmissionsPage(views, page, result.getTotalPages(), result.getTotalElements());
+        return new PendingSubmissionsPage(views, clampedPage, result.getTotalPages(), result.getTotalElements());
     }
 
     /**

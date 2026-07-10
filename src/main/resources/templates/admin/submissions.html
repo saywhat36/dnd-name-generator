@@ -29,6 +29,13 @@
         }
         .actions button:hover{background:var(--ink);color:var(--paper)}
         .empty{color:var(--muted);padding-block:2rem}
+        /* Standard visually-hidden-but-accessible pattern -- referenced by the "Select"
+           column header but never defined (caught in review of #90); without it that text
+           rendered visibly instead of being screen-reader-only. */
+        .sr-only{
+            position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+            overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;
+        }
         .bulk-bar{
             display:flex;align-items:center;gap:.75rem;margin-top:1rem;
             font-size:.8rem;color:var(--muted);

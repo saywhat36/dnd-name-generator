@@ -73,6 +73,25 @@ class AdminSubmissionServiceTest {
     }
 
     /**
+     * Regression guard for review of #90: a negative page reaching {@code PageRequest.of}
+     * unclamped throws {@code IllegalArgumentException}, which this app has no
+     * {@code @ControllerAdvice} to map to a handled response -- GET /admin/submissions?page=-1
+     * would 500. Clamped to 0 instead, and the returned page reflects the clamp (0), not the raw
+     * negative input.
+     */
+    @Test
+    void listPendingSubmissions_should_ClampToFirstPage_When_PageIsNegative() {
+        Pageable clampedPageable = PageRequest.of(0, 50);
+        when(nameSubmissionRepository.findPendingSummaries(SubmissionStatus.PENDING, clampedPageable))
+                .thenReturn(new PageImpl<>(List.of(), clampedPageable, 0));
+
+        PendingSubmissionsPage result = adminSubmissionService.listPendingSubmissions(-1);
+
+        assertThat(result.page()).isEqualTo(0);
+        verify(nameSubmissionRepository).findPendingSummaries(SubmissionStatus.PENDING, clampedPageable);
+    }
+
+    /**
      * hasPrevious/hasNext are plain arithmetic on the record's own fields -- no repository
      * involvement needed to exercise every boundary (first page, middle page, last page).
      */
