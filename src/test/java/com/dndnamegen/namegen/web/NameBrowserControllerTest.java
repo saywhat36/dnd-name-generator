@@ -2,6 +2,7 @@ package com.dndnamegen.namegen.web;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.stringContainsInOrder;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -81,6 +82,18 @@ class NameBrowserControllerTest {
         AppUserDetails principal =
                 new AppUserDetails(42L, "gandalf", "hash", true, List.of(new SimpleGrantedAuthority("ROLE_USER")));
         return withSession(builder).with(user(principal));
+    }
+
+    /**
+     * A CURATED name mock carrying just a display name -- enough for the sort tests, which only
+     * assert on the rendered order of the display names. CURATED (not the null default) keeps the
+     * template's source-icon branch off the null path.
+     */
+    private static Name name(String displayName) {
+        Name name = mock(Name.class);
+        when(name.getDisplayName()).thenReturn(displayName);
+        when(name.getSource()).thenReturn(NameSource.CURATED);
+        return name;
     }
 
     /**
@@ -281,6 +294,90 @@ class NameBrowserControllerTest {
                 .andExpect(content().string(containsString("Sylvaine")));
 
         verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE), eq(NameSourceFilter.BOTH));
+    }
+
+    /**
+     * Issue #79: the A–Z toggle orders the result list by display name, case-insensitively --
+     * "adrie" sorts ahead of "Baern" even though capital B is the lower codepoint, since
+     * capitalisation is only a rendering detail. Deliberately fed to the controller out of order
+     * (Caelynn, adrie, Baern) so the assertion proves the controller reordered them rather than
+     * the mock happening to return them sorted.
+     */
+    @Test
+    void browse_should_SortNamesAlphabeticallyCaseInsensitive_When_SortIsAToZ() throws Exception {
+        List<Name> unordered = List.of(name("Caelynn"), name("adrie"), name("Baern"));
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED)).thenReturn(unordered);
+
+        mockMvc.perform(withOwner(get("/browse")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("sort", "A_TO_Z")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(stringContainsInOrder("adrie", "Baern", "Caelynn")));
+    }
+
+    /** Issue #79: the Z–A toggle is the reverse ordering, still case-insensitive. */
+    @Test
+    void browse_should_SortNamesDescending_When_SortIsZToA() throws Exception {
+        List<Name> unordered = List.of(name("Caelynn"), name("adrie"), name("Baern"));
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED)).thenReturn(unordered);
+
+        mockMvc.perform(withOwner(get("/browse")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("sort", "Z_TO_A")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(stringContainsInOrder("Caelynn", "Baern", "adrie")));
+    }
+
+    /**
+     * Issue #79: DEFAULT (the fallback when no sort param is sent) is a true no-op that preserves
+     * whatever order the query returned, rather than silently imposing an alphabetical order.
+     */
+    @Test
+    void browse_should_PreserveQueryOrder_When_SortIsDefault() throws Exception {
+        List<Name> unordered = List.of(name("Caelynn"), name("adrie"), name("Baern"));
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED)).thenReturn(unordered);
+
+        mockMvc.perform(withOwner(get("/browse").param("race", "ELF").param("gender", "FEMININE")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(stringContainsInOrder("Caelynn", "adrie", "Baern")));
+    }
+
+    /** Issue #79: the Sort toggle renders as its own button group with the current choice highlighted. */
+    @Test
+    void browse_should_RenderSortToggleWithSelectionHighlighted_When_SortParamGiven() throws Exception {
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED)).thenReturn(List.of());
+
+        mockMvc.perform(withOwner(get("/browse")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("sort", "A_TO_Z")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("aria-label=\"Sort\"")))
+                .andExpect(content().string(stringContainsInOrder(
+                        "id=\"sort-A_TO_Z\"", "aria-pressed=\"true\"", "selected")));
+    }
+
+    /**
+     * Issue #79: the sort selection survives a generate-more click -- the controller threads the
+     * sort param through so the re-rendered fragment keeps the chosen ordering rather than
+     * silently reverting to DEFAULT.
+     */
+    @Test
+    void generateMore_should_HonorSort_When_SortParamGiven() throws Exception {
+        List<Name> unordered = List.of(name("Caelynn"), name("adrie"), name("Baern"));
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED)).thenReturn(unordered);
+
+        mockMvc.perform(withOwner(post("/browse/generate-more")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "AI_GENERATED")
+                        .param("sort", "A_TO_Z")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(stringContainsInOrder("adrie", "Baern", "Caelynn")));
+
+        verify(poolReplenishmentService).replenish(Race.ELF, Gender.FEMININE);
     }
 
     @Test

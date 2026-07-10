@@ -10,8 +10,10 @@ import com.dndnamegen.namegen.name.NameService;
 import com.dndnamegen.namegen.name.NameSource;
 import com.dndnamegen.namegen.name.NameSourceFilter;
 import com.dndnamegen.namegen.name.Race;
+import com.dndnamegen.namegen.name.SortOrder;
 import com.dndnamegen.namegen.report.NameReportService;
 import com.dndnamegen.namegen.user.UserService;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +36,15 @@ public class NameBrowserController {
     private static final Race DEFAULT_RACE = Race.ELF;
     private static final Gender DEFAULT_GENDER = Gender.FEMININE;
     private static final NameSourceFilter DEFAULT_SOURCE = NameSourceFilter.CURATED;
+    private static final SortOrder DEFAULT_SORT = SortOrder.DEFAULT;
+
+    /**
+     * Case-insensitive display-name comparator backing the A–Z/Z–A sort toggle (issue #79) --
+     * capitalisation is a rendering detail (see index.html's text-transform), so "adrie" and
+     * "Adrie" must not sort into different neighbourhoods.
+     */
+    private static final Comparator<Name> BY_DISPLAY_NAME =
+            Comparator.comparing(Name::getDisplayName, String.CASE_INSENSITIVE_ORDER);
 
     private final NameService nameService;
     private final FavoriteService favoriteService;
@@ -59,7 +70,7 @@ public class NameBrowserController {
 
     @GetMapping("/")
     public String index(Model model, Identity identity) {
-        populateBrowser(model, DEFAULT_RACE, DEFAULT_GENDER, DEFAULT_SOURCE, identity);
+        populateBrowser(model, DEFAULT_RACE, DEFAULT_GENDER, DEFAULT_SOURCE, DEFAULT_SORT, identity);
         return "index";
     }
 
@@ -68,9 +79,10 @@ public class NameBrowserController {
             @RequestParam Race race,
             @RequestParam Gender gender,
             @RequestParam(defaultValue = "CURATED") NameSourceFilter source,
+            @RequestParam(defaultValue = "DEFAULT") SortOrder sort,
             Model model,
             Identity identity) {
-        populateBrowser(model, race, gender, source, identity);
+        populateBrowser(model, race, gender, source, sort, identity);
         return "index :: browser";
     }
 
@@ -106,10 +118,11 @@ public class NameBrowserController {
             @RequestParam Race race,
             @RequestParam Gender gender,
             @RequestParam(defaultValue = "CURATED") NameSourceFilter source,
+            @RequestParam(defaultValue = "DEFAULT") SortOrder sort,
             Model model,
             Identity identity) {
         poolReplenishmentService.replenish(race, gender);
-        populateBrowser(model, race, gender, source, identity);
+        populateBrowser(model, race, gender, source, sort, identity);
         model.addAttribute("generatingMore", true);
         return "index :: browser";
     }
@@ -124,16 +137,23 @@ public class NameBrowserController {
      * just requested.
      */
     private void populateBrowser(
-            Model model, Race race, Gender gender, NameSourceFilter source, Identity identity) {
-        List<Name> names = nameService.getNames(race, gender, source);
+            Model model,
+            Race race,
+            Gender gender,
+            NameSourceFilter source,
+            SortOrder sort,
+            Identity identity) {
+        List<Name> names = sortNames(nameService.getNames(race, gender, source), sort);
         long aiPoolSize = names.stream().filter(n -> n.getSource() == NameSource.AI_GENERATED).count();
 
         model.addAttribute("races", Race.values());
         model.addAttribute("genders", Gender.values());
         model.addAttribute("sources", NameSourceFilter.values());
+        model.addAttribute("sorts", SortOrder.values());
         model.addAttribute("selectedRace", race);
         model.addAttribute("selectedGender", gender);
         model.addAttribute("selectedSource", source);
+        model.addAttribute("selectedSort", sort);
         model.addAttribute("names", names);
         model.addAttribute("submitterUsernames", resolveSubmitterUsernames(names));
         model.addAttribute("favoritedNameIds", favoriteService.getFavoritedNameIds(identity));
@@ -144,6 +164,23 @@ public class NameBrowserController {
         // Backs the submit-a-name form's client-side maxlength -- see QualityGateService's
         // getMaxLength() Javadoc for why this reads live config rather than a hardcoded value.
         model.addAttribute("submissionMaxLength", qualityGateService.getMaxLength());
+    }
+
+    /**
+     * Applies the browser's sort toggle (issue #79) to the already-fetched result list. Done
+     * in-memory here rather than as a repository {@code ORDER BY} so a single ordering covers
+     * every {@link NameSourceFilter} (including BOTH, which merges two sources) without each
+     * query having to grow a sort clause, and so DEFAULT stays a true no-op that preserves the
+     * query's own order. Returns a new list for the sorted cases -- the source list may be
+     * immutable (e.g. the repository's or a test's {@code List.of(...)}), so it is never sorted
+     * in place.
+     */
+    private static List<Name> sortNames(List<Name> names, SortOrder sort) {
+        return switch (sort) {
+            case DEFAULT -> names;
+            case A_TO_Z -> names.stream().sorted(BY_DISPLAY_NAME).toList();
+            case Z_TO_A -> names.stream().sorted(BY_DISPLAY_NAME.reversed()).toList();
+        };
     }
 
     /**
