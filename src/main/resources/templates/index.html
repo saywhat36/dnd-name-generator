@@ -460,7 +460,7 @@
         <div
             class="more"
             sec:authorize="isAuthenticated()"
-            th:if="${(selectedSource == T(com.dndnamegen.namegen.name.NameSourceFilter).AI_GENERATED or selectedSource == T(com.dndnamegen.namegen.name.NameSourceFilter).BOTH) and !generatingMore and aiPoolSize < aiPoolCap}">
+            th:if="${(selectedSource == T(com.dndnamegen.namegen.name.NameSourceFilter).AI_GENERATED or selectedSource == T(com.dndnamegen.namegen.name.NameSourceFilter).ALL) and !generatingMore and aiPoolSize < aiPoolCap}">
             <button
                 type="button"
                 class="cta"

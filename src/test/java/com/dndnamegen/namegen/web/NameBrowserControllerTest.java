@@ -285,15 +285,15 @@ class NameBrowserControllerTest {
     void browse_should_PassThroughRequestedSource_When_SourceParamIsGiven() throws Exception {
         Name aiName = mock(Name.class);
         when(aiName.getDisplayName()).thenReturn("Sylvaine");
-        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.BOTH))
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.ALL))
                 .thenReturn(List.of(aiName));
 
         mockMvc.perform(
-                        withOwner(get("/browse").param("race", "ELF").param("gender", "FEMININE").param("source", "BOTH")))
+                        withOwner(get("/browse").param("race", "ELF").param("gender", "FEMININE").param("source", "ALL")))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Sylvaine")));
 
-        verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE), eq(NameSourceFilter.BOTH));
+        verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE), eq(NameSourceFilter.ALL));
     }
 
     /**

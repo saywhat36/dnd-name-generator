@@ -51,13 +51,13 @@ class NameControllerTest {
     }
 
     @Test
-    void getNames_should_PassThroughSourceParam_When_SourceIsBoth() throws Exception {
-        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.BOTH)).thenReturn(List.of());
+    void getNames_should_PassThroughSourceParam_When_SourceIsAll() throws Exception {
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.ALL)).thenReturn(List.of());
 
-        mockMvc.perform(get("/names").param("race", "ELF").param("gender", "FEMININE").param("source", "BOTH"))
+        mockMvc.perform(get("/names").param("race", "ELF").param("gender", "FEMININE").param("source", "ALL"))
                 .andExpect(status().isOk());
 
-        verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE), eq(NameSourceFilter.BOTH));
+        verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE), eq(NameSourceFilter.ALL));
     }
 
     @Test

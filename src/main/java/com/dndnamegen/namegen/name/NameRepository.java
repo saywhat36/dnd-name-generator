@@ -22,9 +22,9 @@ public interface NameRepository extends JpaRepository<Name, Long> {
     boolean existsByNormalizedNameAndRaceAndGender(String normalizedName, Race race, Gender gender);
 
     /**
-     * Backs the CURATED/AI_GENERATED/BOTH source toggle in NameService.getNames --
-     * BOTH queries CURATED and AI_GENERATED together in one call rather than two
-     * separate queries merged in application code.
+     * Backs the CURATED/AI_GENERATED/USER_SUBMITTED/ALL source toggle in NameService.getNames --
+     * ALL queries every source together in one call rather than several separate
+     * queries merged in application code.
      */
     List<Name> findByRaceAndGenderAndStatusAndSourceIn(
             Race race, Gender gender, NameStatus status, List<NameSource> sources);

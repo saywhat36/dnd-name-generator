@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Orchestrates the CURATED/AI_GENERATED/BOTH source toggle and the
+ * Orchestrates the CURATED/AI_GENERATED/USER_SUBMITTED/ALL source toggle and the
  * threshold-triggered half of pool replenishment described in
  * docs/ARCHITECTURE.md's "Request flow" section: this class decides
  * *when* to call PoolReplenishmentService.replenish(...); the service itself
@@ -88,14 +88,14 @@ public class NameService {
 
     private static List<NameSource> toSources(NameSourceFilter filter) {
         return switch (filter) {
-            // Issue #81: USER_SUBMITTED is now its own filter, so it's no longer folded into
-            // CURATED (or BOTH). CURATED means only handbook names, USER_SUBMITTED means only
-            // approved user submissions, and BOTH remains "the two generation sources" (curated
-            // + AI) -- user-submitted names are reachable solely via their dedicated filter.
+            // Issue #81: USER_SUBMITTED is its own filter. CURATED means only handbook names,
+            // AI_GENERATED only AI names, USER_SUBMITTED only approved user submissions, and ALL
+            // is every served source -- the three above combined -- so the "All" label matches
+            // what it returns.
             case CURATED -> List.of(NameSource.CURATED);
             case AI_GENERATED -> List.of(NameSource.AI_GENERATED);
             case USER_SUBMITTED -> List.of(NameSource.USER_SUBMITTED);
-            case BOTH -> List.of(NameSource.CURATED, NameSource.AI_GENERATED);
+            case ALL -> List.of(NameSource.CURATED, NameSource.AI_GENERATED, NameSource.USER_SUBMITTED);
         };
     }
 }
