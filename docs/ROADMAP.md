@@ -191,10 +191,18 @@ series of small PRs, each independently releasable.
   for the submitter's username. No `WebSecurityConfig` change (`/admin/**`
   already `hasRole('ADMIN')`). Actions column in `admin/submissions.html`
   is empty -- approve/reject land in PR 6
-- [ ] PR 5 -- `USER_SUBMITTED` `NameSource` + serving-path visibility
-  (grouped with CURATED as human-authored), no writer yet
-- [ ] PR 6 -- approve/reject actions: native insert into `names`
-  (`USER_SUBMITTED`/`ACTIVE`, `ON CONFLICT DO NOTHING`) + submission status flip
+- [x] PR 5 -- `USER_SUBMITTED` `NameSource` + serving-path visibility:
+  `V9` extends `names.source`'s CHECK; `NameSource.USER_SUBMITTED` added;
+  `NameService.toSources` groups `USER_SUBMITTED` with `CURATED` (human-
+  authored) under both the `CURATED` and `BOTH` filters, `AI_GENERATED`
+  alone unaffected. Zero rows use the source until PR 6's writer lands.
+  Landed as a direct commit to `main` (no PR) -- see `DECISIONS.md`
+- [x] PR 6 -- approve/reject actions (PR #84): `SubmissionInsertDao`
+  (native `INSERT ... ON CONFLICT DO NOTHING`, mirrors `NameInsertDao`)
+  + `AdminSubmissionService.approve`/`reject` + `NameSubmissionRepository
+  .updateStatus`. Approve is idempotent against an already-existing name
+  (insert returns 0, submission still marked `APPROVED`); reject inserts
+  nothing. Fills in `admin/submissions.html`'s Actions column
 
 ## Phase 3 -- Backstories + streaming (deferred)
 - [ ] Decide backstory persistence model (shared/cached on the name vs.

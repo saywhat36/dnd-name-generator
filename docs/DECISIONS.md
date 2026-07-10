@@ -2656,3 +2656,62 @@ JPQL's raw-SQL equivalent by hand: two `PENDING` rows land oldest-first with the
 set by the "V7 review findings" fix, which verified constraint behavior the same way when
 Testcontainers was unavailable. `AdminSubmissionControllerTest` (mocked service, no DB) runs
 normally and passes 2/2.
+
+## 2026-07-09: User-submitted names -- `USER_SUBMITTED` source + serving visibility (PR 5)
+Fifth slice: `NameSource.USER_SUBMITTED` and `V9` (extends `names.source`'s CHECK) exist, and
+`NameService.toSources` already routes `USER_SUBMITTED` into the `CURATED`/`BOTH` filters -- but
+nothing writes the value yet (PR 6 is the writer), so this is a zero-row, behavior-neutral change,
+same shape as PR 1's schema-before-behavior ordering. `USER_SUBMITTED` is grouped with `CURATED`
+under "human-authored" rather than getting a fourth source-toggle button of its own -- preserves
+provenance (the icon/title in `index.html` still tells curated apart from AI) without expanding a
+toggle that's product-scoped as CURATED/AI_GENERATED/BOTH. `AI_GENERATED` alone stays untouched:
+few-shot prompting must never be primed off unvetted user text.
+
+**Process note: this slice landed as a direct commit to `main` (`45fb04f`), not a reviewed PR**,
+breaking the pattern every other slice in this log followed. Discovered after the fact when PR 6
+(`feature/approve-reject-actions`, #84) was already merged on top of it. Two consequences worth
+recording rather than quietly absorbing:
+
+1. **Two pre-existing `NameServiceTest` cases were broken and went unnoticed**
+   (`getNames_should_TriggerReplenish_When_SourceIsAiGeneratedAndPoolBelowThreshold` and
+   `getNames_should_NotTriggerReplenish_When_AiGeneratedPoolAtOrAboveThreshold`, both predating
+   this slice, from the original Week 3 commit) -- `.thenReturn(aiGeneratedNames(N))` calls a
+   helper that itself does `mock()`/`when()`/`.thenReturn()` as an argument to a still-open outer
+   `when(...).thenReturn(...)`, which Mockito always rejects with `UnfinishedStubbingException`
+   (evaluating that argument starts a second stub before the first is completed). Not an
+   environment quirk -- a real, deterministic bug, unrelated to `USER_SUBMITTED`, that a `./mvnw
+   test` run at any point would have caught. Fixed by extracting the helper call to a local
+   variable first (matching the one call site in the same file that already did this correctly
+   and passed).
+2. **No `AdminSubmissionServiceTest` was ever written**, despite the original plan explicitly
+   calling for one to cover `approve`/`reject`'s core logic (load-then-check-PENDING, idempotent
+   insert via `ON CONFLICT`, `APPROVED` even when the name already existed, non-PENDING -> `false`).
+   `AdminSubmissionControllerTest` alone (mocked service) never exercised any of that. Added
+   `AdminSubmissionServiceTest` (7 cases) to close the gap.
+
+Take the "direct to `main`" path here as the exception, not a new precedent -- every other slice in
+this repo went through a PR with independent review, and that review process is what caught issues
+like these before merge in every prior case.
+
+## 2026-07-09: User-submitted names -- approve/reject actions (PR 6, #84)
+Sixth and final core slice: `POST /admin/submissions/{id}/approve` and `/reject`, both `hasRole
+("ADMIN")`, PRG-redirecting back to `GET /admin/submissions`. `SubmissionInsertDao` is the one
+native insert path for `USER_SUBMITTED` rows -- mirrors `NameInsertDao` exactly (JPA has no clean
+`ON CONFLICT DO NOTHING` mapping, and a constraint violation would mark a JPA transaction
+rollback-only, so "catch and continue" inside one transaction doesn't work). `provider`/`model`/
+`prompt_version`/`generation_log_id` are all `NULL` on the inserted row -- not AI-generated, no
+generation log entry to point at.
+
+**Approve is idempotent against a name that already exists.** `insertSubmitted` returns 0 (via
+`ON CONFLICT DO NOTHING`) rather than erroring when the target `(normalized_name, race, gender)`
+already has a row -- `AdminSubmissionService.approve` ignores that return value for the purposes of
+the submission's own status: it marks `APPROVED` either way, because the reviewer's decision is the
+atomic unit being recorded, not whether a brand-new `names` row happened to be created. Reject never
+inserts anything.
+
+**`approve`/`reject` both re-check `PENDING` server-side, not just via the UI's queue filtering.**
+`admin/submissions.html` only ever lists `PENDING` rows, but a stale page (double-click, two admin
+tabs) could still POST an action against an already-resolved id -- `AdminSubmissionService` loads
+the submission fresh and returns `false` (mapped to `404` by the controller) if it's missing or not
+`PENDING`, so a second action on the same id can't silently re-fire `insertSubmitted` or overwrite
+an earlier reviewer's decision.

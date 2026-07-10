@@ -89,8 +89,9 @@ class NameServiceTest {
 
     @Test
     void getNames_should_TriggerReplenish_When_SourceIsAiGeneratedAndPoolBelowThreshold() {
+        List<Name> belowThresholdPool = aiGeneratedNames(4);
         when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(any(), any(), any(), any()))
-                .thenReturn(aiGeneratedNames(4));
+                .thenReturn(belowThresholdPool);
 
         nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED);
 
@@ -109,8 +110,9 @@ class NameServiceTest {
 
     @Test
     void getNames_should_NotTriggerReplenish_When_AiGeneratedPoolAtOrAboveThreshold() {
+        List<Name> atThresholdPool = aiGeneratedNames(5);
         when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(any(), any(), any(), any()))
-                .thenReturn(aiGeneratedNames(5));
+                .thenReturn(atThresholdPool);
 
         nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED);
 
