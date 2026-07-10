@@ -204,6 +204,14 @@ series of small PRs, each independently releasable.
   (insert returns 0, submission still marked `APPROVED`); reject inserts
   nothing. Fills in `admin/submissions.html`'s Actions column
 
+### Optional follow-ups (tracked as GitHub issues)
+- [x] "My submissions" view ([#85](https://github.com/saywhat36/dnd-name-generator/issues/85)):
+  `GET /submissions/mine`, owner-keyed, read-only, mirrors `GET /favorites`'s
+  shape -- see `DECISIONS.md`
+- [ ] Admin bulk actions / pagination ([#86](https://github.com/saywhat36/dnd-name-generator/issues/86))
+- [ ] Wire the existing (unwired) `RateLimitFilter` scaffolding to
+  `/submissions` ([#87](https://github.com/saywhat36/dnd-name-generator/issues/87))
+
 ## Phase 3 -- Backstories + streaming (deferred)
 - [ ] Decide backstory persistence model (shared/cached on the name vs.
   per-favorite/per-user) before building -- this changes the schema

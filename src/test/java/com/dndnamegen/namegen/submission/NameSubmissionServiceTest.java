@@ -13,6 +13,7 @@ import com.dndnamegen.namegen.identity.Identity;
 import com.dndnamegen.namegen.name.Gender;
 import com.dndnamegen.namegen.name.NameRepository;
 import com.dndnamegen.namegen.name.Race;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -108,5 +109,26 @@ class NameSubmissionServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting(e -> ((ResponseStatusException) e).getStatusCode())
                 .isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    void listMySubmissions_should_ReturnOwnersSubmissions_When_TheyHaveAny() {
+        NameSubmission first = new NameSubmission(42L, "Aelar", Race.ELF, Gender.MASCULINE);
+        NameSubmission second = new NameSubmission(42L, "Borin", Race.DWARF, Gender.MASCULINE);
+        when(nameSubmissionRepository.findBySubmitterIdOrderByCreatedAtDescIdDesc(42L))
+                .thenReturn(List.of(second, first));
+
+        List<NameSubmission> result = nameSubmissionService.listMySubmissions(IDENTITY);
+
+        assertThat(result).containsExactly(second, first);
+    }
+
+    @Test
+    void listMySubmissions_should_ReturnEmptyList_When_OwnerHasNoSubmissions() {
+        when(nameSubmissionRepository.findBySubmitterIdOrderByCreatedAtDescIdDesc(42L)).thenReturn(List.of());
+
+        List<NameSubmission> result = nameSubmissionService.listMySubmissions(IDENTITY);
+
+        assertThat(result).isEmpty();
     }
 }

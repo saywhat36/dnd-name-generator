@@ -6,6 +6,7 @@ import com.dndnamegen.namegen.identity.Identity;
 import com.dndnamegen.namegen.name.Gender;
 import com.dndnamegen.namegen.name.NameRepository;
 import com.dndnamegen.namegen.name.Race;
+import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -75,5 +76,17 @@ public class NameSubmissionService {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT, "a submission for this name is already pending review", e);
         }
+    }
+
+    /**
+     * "My submissions" (read-only, owner-keyed): every submission this identity has made,
+     * regardless of status, most-recent-first. Deliberately no anonymous fallback -- unlike
+     * {@code getReportedNameIds}, which the public browse page calls for every visitor,
+     * {@code /submissions/mine} is itself an authenticated-only route (see {@code
+     * NameSubmissionController}/{@code WebSecurityConfig}), so {@code identity.ownerId()} is
+     * always non-null here.
+     */
+    public List<NameSubmission> listMySubmissions(Identity identity) {
+        return nameSubmissionRepository.findBySubmitterIdOrderByCreatedAtDescIdDesc(identity.ownerId());
     }
 }

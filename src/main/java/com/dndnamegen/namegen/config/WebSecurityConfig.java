@@ -76,7 +76,7 @@ public class WebSecurityConfig {
                         .permitAll()
                         // Everything that mutates state requires login: the manual AI-generation
                         // trigger, favoriting/unfavoriting/listing favorites, reporting, and
-                        // submitting a candidate name for review.
+                        // submitting/listing-your-own a candidate name for review.
                         // Belt-and-braces: the mutating controller methods also carry
                         // @PreAuthorize("isAuthenticated()") (see FavoriteController,
                         // NameReportController, NameSubmissionController, NameBrowserController.generateMore) --
@@ -89,7 +89,8 @@ public class WebSecurityConfig {
                                 new AntPathRequestMatcher("/favorites", "GET"),
                                 new AntPathRequestMatcher("/favorites/*", "DELETE"),
                                 new AntPathRequestMatcher("/reports", "POST"),
-                                new AntPathRequestMatcher("/submissions", "POST"))
+                                new AntPathRequestMatcher("/submissions", "POST"),
+                                new AntPathRequestMatcher("/submissions/mine", "GET"))
                         .authenticated()
                         // Slice 9: AdminReportController now serves this (role plumbing --
                         // users.role, DbUserDetailsService's ROLE_ mapping -- was already in

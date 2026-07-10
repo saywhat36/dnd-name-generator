@@ -3,9 +3,12 @@ package com.dndnamegen.namegen.submission;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.dndnamegen.namegen.identity.Identity;
@@ -106,5 +109,29 @@ class NameSubmissionControllerTest {
                         .param("gender", "MASCULINE")
                         .param("displayName", "Aelar")))
                 .andExpect(status().is3xxRedirection());
+    }
+
+    @Test
+    void listMySubmissions_should_ReturnOwnersSubmissions_When_Authenticated() throws Exception {
+        NameSubmission submission = new NameSubmission(42L, "Aelar", Race.ELF, Gender.MASCULINE);
+        when(nameSubmissionService.listMySubmissions(IDENTITY)).thenReturn(List.of(submission));
+
+        mockMvc.perform(withOwner(get("/submissions/mine")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].displayName").value("Aelar"))
+                .andExpect(jsonPath("$[0].race").value("ELF"))
+                .andExpect(jsonPath("$[0].gender").value("MASCULINE"))
+                .andExpect(jsonPath("$[0].status").value("PENDING"));
+
+        verify(nameSubmissionService).listMySubmissions(IDENTITY);
+    }
+
+    /**
+     * GET /submissions/mine requires authentication at the filter-chain level (see
+     * WebSecurityConfig), same as POST /submissions.
+     */
+    @Test
+    void listMySubmissions_should_RedirectToLogin_When_Unauthenticated() throws Exception {
+        mockMvc.perform(withSession(get("/submissions/mine"))).andExpect(status().is3xxRedirection());
     }
 }
