@@ -317,7 +317,7 @@
                 th:id="'race-' + ${r.name()}"
                 th:text="${#strings.toLowerCase(#strings.replace(r.name(),'_','-'))}"
                 th:classappend="${r == selectedRace} ? 'selected' : ''"
-                th:attr="aria-pressed=${r == selectedRace},hx-get=@{/browse(race=${r},gender=${selectedGender},source=${selectedSource})}"
+                th:attr="aria-pressed=${r == selectedRace},hx-get=@{/browse(race=${r},gender=${selectedGender},source=${selectedSource},sort=${selectedSort})}"
                 hx-target="#browser"
                 hx-swap="outerHTML"></button>
         </div>
@@ -333,7 +333,7 @@
                 th:id="'gender-' + ${g.name()}"
                 th:text="${#strings.toLowerCase(g.name())}"
                 th:classappend="${g == selectedGender} ? 'selected' : ''"
-                th:attr="aria-pressed=${g == selectedGender},hx-get=@{/browse(race=${selectedRace},gender=${g},source=${selectedSource})}"
+                th:attr="aria-pressed=${g == selectedGender},hx-get=@{/browse(race=${selectedRace},gender=${g},source=${selectedSource},sort=${selectedSort})}"
                 hx-target="#browser"
                 hx-swap="outerHTML"></button>
         </div>
@@ -349,7 +349,23 @@
                 th:id="'source-' + ${s.name()}"
                 th:text="${s.label}"
                 th:classappend="${s == selectedSource} ? 'selected' : ''"
-                th:attr="aria-pressed=${s == selectedSource},hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${s})}"
+                th:attr="aria-pressed=${s == selectedSource},hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${s},sort=${selectedSort})}"
+                hx-target="#browser"
+                hx-swap="outerHTML"></button>
+        </div>
+    </div>
+
+    <div class="picker-row" role="group" aria-label="Sort">
+        <span class="lbl">Sort</span>
+        <div class="opts">
+            <button
+                type="button"
+                class="opt"
+                th:each="o : ${sorts}"
+                th:id="'sort-' + ${o.name()}"
+                th:text="${o.label}"
+                th:classappend="${o == selectedSort} ? 'selected' : ''"
+                th:attr="aria-pressed=${o == selectedSort},hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${selectedSource},sort=${o})}"
                 hx-target="#browser"
                 hx-swap="outerHTML"></button>
         </div>
@@ -448,7 +464,7 @@
             <button
                 type="button"
                 class="cta"
-                th:attr="hx-post=@{/browse/generate-more(race=${selectedRace},gender=${selectedGender},source=${selectedSource})}"
+                th:attr="hx-post=@{/browse/generate-more(race=${selectedRace},gender=${selectedGender},source=${selectedSource},sort=${selectedSort})}"
                 hx-target="#browser"
                 hx-swap="outerHTML">Generate <em>five more</em><span class="mark" aria-hidden="true">※</span></button>
         </div>
@@ -457,7 +473,7 @@
             class="more conjuring"
             sec:authorize="isAuthenticated()"
             th:if="${generatingMore}"
-            th:attr="hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${selectedSource})}"
+            th:attr="hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${selectedSource},sort=${selectedSort})}"
             hx-trigger="every 2s"
             hx-target="#browser"
             hx-swap="outerHTML"><span class="spin" aria-hidden="true">※</span> Conjuring <em>five more</em>&hellip;</div>
