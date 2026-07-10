@@ -29,8 +29,10 @@ import com.dndnamegen.namegen.name.Race;
 import com.dndnamegen.namegen.report.NameReportService;
 import com.dndnamegen.namegen.session.SessionIdFilter;
 import com.dndnamegen.namegen.user.AppUserDetails;
+import com.dndnamegen.namegen.user.UserService;
 import jakarta.servlet.http.Cookie;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -59,6 +61,8 @@ class NameBrowserControllerTest {
     @MockBean private PoolReplenishmentService poolReplenishmentService;
 
     @MockBean private QualityGateService qualityGateService;
+
+    @MockBean private UserService userService;
 
     /**
      * @WebMvcTest auto-registers Filter beans, so the real SessionIdFilter runs in this
@@ -115,6 +119,33 @@ class NameBrowserControllerTest {
                 .andExpect(content().string(containsString("Adrie")));
 
         verify(nameService).getNames(eq(Race.ELF), eq(Gender.FEMININE), eq(NameSourceFilter.CURATED));
+    }
+
+    /**
+     * Issue #81: under the USER_SUBMITTED filter, each name renders with a "submitted by
+     * &lt;username&gt;" byline. The controller resolves the submitter id on the name to a username
+     * via UserService and hands the results to the template keyed by name id.
+     */
+    @Test
+    void browse_should_RenderSubmitterUsername_When_SourceIsUserSubmitted() throws Exception {
+        Name userSubmittedName = mock(Name.class);
+        when(userSubmittedName.getId()).thenReturn(10L);
+        when(userSubmittedName.getDisplayName()).thenReturn("Grishnakh");
+        when(userSubmittedName.getSource()).thenReturn(NameSource.USER_SUBMITTED);
+        when(userSubmittedName.getSubmitterId()).thenReturn(5L);
+        when(nameService.getNames(Race.HALF_ORC, Gender.MASCULINE, NameSourceFilter.USER_SUBMITTED))
+                .thenReturn(List.of(userSubmittedName));
+        when(userService.usernamesByIds(Set.of(5L))).thenReturn(Map.of(5L, "gandalf"));
+
+        mockMvc.perform(withOwner(get("/browse")
+                        .param("race", "HALF_ORC")
+                        .param("gender", "MASCULINE")
+                        .param("source", "USER_SUBMITTED")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Grishnakh")))
+                .andExpect(content().string(containsString("submitted by gandalf")));
+
+        verify(nameService).getNames(eq(Race.HALF_ORC), eq(Gender.MASCULINE), eq(NameSourceFilter.USER_SUBMITTED));
     }
 
     /**

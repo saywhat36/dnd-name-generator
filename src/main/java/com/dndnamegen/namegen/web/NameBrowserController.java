@@ -11,7 +11,12 @@ import com.dndnamegen.namegen.name.NameSource;
 import com.dndnamegen.namegen.name.NameSourceFilter;
 import com.dndnamegen.namegen.name.Race;
 import com.dndnamegen.namegen.report.NameReportService;
+import com.dndnamegen.namegen.user.UserService;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -35,18 +40,21 @@ public class NameBrowserController {
     private final NameReportService nameReportService;
     private final PoolReplenishmentService poolReplenishmentService;
     private final QualityGateService qualityGateService;
+    private final UserService userService;
 
     public NameBrowserController(
             NameService nameService,
             FavoriteService favoriteService,
             NameReportService nameReportService,
             PoolReplenishmentService poolReplenishmentService,
-            QualityGateService qualityGateService) {
+            QualityGateService qualityGateService,
+            UserService userService) {
         this.nameService = nameService;
         this.favoriteService = favoriteService;
         this.nameReportService = nameReportService;
         this.poolReplenishmentService = poolReplenishmentService;
         this.qualityGateService = qualityGateService;
+        this.userService = userService;
     }
 
     @GetMapping("/")
@@ -127,6 +135,7 @@ public class NameBrowserController {
         model.addAttribute("selectedGender", gender);
         model.addAttribute("selectedSource", source);
         model.addAttribute("names", names);
+        model.addAttribute("submitterUsernames", resolveSubmitterUsernames(names));
         model.addAttribute("favoritedNameIds", favoriteService.getFavoritedNameIds(identity));
         model.addAttribute("reportedNameIds", nameReportService.getReportedNameIds(identity));
         model.addAttribute("aiPoolSize", aiPoolSize);
@@ -135,5 +144,39 @@ public class NameBrowserController {
         // Backs the submit-a-name form's client-side maxlength -- see QualityGateService's
         // getMaxLength() Javadoc for why this reads live config rather than a hardcoded value.
         model.addAttribute("submissionMaxLength", qualityGateService.getMaxLength());
+    }
+
+    /**
+     * Maps each USER_SUBMITTED name's id to the username of whoever proposed it (issue #81), so
+     * the results list can render a "submitted by" byline. Keyed by name id -- not user id --
+     * because the template iterates names and needs the lookup per row. Only USER_SUBMITTED rows
+     * carry a submitter (see {@link Name#getSubmitterId()}); everything else is skipped, so on the
+     * non-user-submitted filters this resolves to an empty map without touching the user store.
+     *
+     * <p>Batched into a single {@code usernamesByIds} call over the distinct submitter ids rather
+     * than one lookup per row. A row whose submitter no longer resolves (e.g. a deleted account)
+     * is simply left out of the map, and the template guards on presence, so it degrades to "no
+     * byline" rather than failing the render.
+     */
+    private Map<Long, String> resolveSubmitterUsernames(List<Name> names) {
+        Set<Long> submitterIds = names.stream()
+                .filter(n -> n.getSource() == NameSource.USER_SUBMITTED && n.getSubmitterId() != null)
+                .map(Name::getSubmitterId)
+                .collect(Collectors.toSet());
+        if (submitterIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, String> usernamesByUserId = userService.usernamesByIds(submitterIds);
+        Map<Long, String> usernamesByNameId = new LinkedHashMap<>();
+        for (Name name : names) {
+            if (name.getSource() == NameSource.USER_SUBMITTED && name.getSubmitterId() != null) {
+                String username = usernamesByUserId.get(name.getSubmitterId());
+                if (username != null) {
+                    usernamesByNameId.put(name.getId(), username);
+                }
+            }
+        }
+        return usernamesByNameId;
     }
 }

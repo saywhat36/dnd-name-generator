@@ -83,8 +83,13 @@ public class AdminSubmissionService {
         }
 
         // Insert the name (idempotent via ON CONFLICT). Return value tells us if a new row was
-        // created, but the submission is approved regardless.
-        submissionInsertDao.insertSubmitted(submission.getDisplayName(), submission.getRace(), submission.getGender());
+        // created, but the submission is approved regardless. The submitter is carried onto the
+        // name row (issue #81) so the "user submitted" view can attribute it to a username.
+        submissionInsertDao.insertSubmitted(
+                submission.getDisplayName(),
+                submission.getRace(),
+                submission.getGender(),
+                submission.getSubmitterId());
 
         // Record the approval decision.
         nameSubmissionRepository.updateStatus(

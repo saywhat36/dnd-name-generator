@@ -88,9 +88,14 @@ public class NameService {
 
     private static List<NameSource> toSources(NameSourceFilter filter) {
         return switch (filter) {
-            case CURATED -> List.of(NameSource.CURATED, NameSource.USER_SUBMITTED);
+            // Issue #81: USER_SUBMITTED is now its own filter, so it's no longer folded into
+            // CURATED (or BOTH). CURATED means only handbook names, USER_SUBMITTED means only
+            // approved user submissions, and BOTH remains "the two generation sources" (curated
+            // + AI) -- user-submitted names are reachable solely via their dedicated filter.
+            case CURATED -> List.of(NameSource.CURATED);
             case AI_GENERATED -> List.of(NameSource.AI_GENERATED);
-            case BOTH -> List.of(NameSource.CURATED, NameSource.AI_GENERATED, NameSource.USER_SUBMITTED);
+            case USER_SUBMITTED -> List.of(NameSource.USER_SUBMITTED);
+            case BOTH -> List.of(NameSource.CURATED, NameSource.AI_GENERATED);
         };
     }
 }

@@ -20,8 +20,8 @@ public class SubmissionInsertDao {
             """
             INSERT INTO names
                 (display_name, normalized_name, race, gender, source, status,
-                 provider, model, prompt_version, generation_log_id, created_at)
-            VALUES (?, ?, ?, ?, 'USER_SUBMITTED', 'ACTIVE', NULL, NULL, NULL, NULL, now())
+                 provider, model, prompt_version, generation_log_id, submitter_id, created_at)
+            VALUES (?, ?, ?, ?, 'USER_SUBMITTED', 'ACTIVE', NULL, NULL, NULL, NULL, ?, now())
             ON CONFLICT (normalized_name, race, gender) DO NOTHING
             """;
 
@@ -38,9 +38,12 @@ public class SubmissionInsertDao {
      * but submission is still marked APPROVED to record the reviewer's decision).
      *
      * <p>Provider/model/prompt_version/generation_log_id are set to NULL (not AI-generated).
-     * Caller assumes the displayName has already passed validation.
+     * {@code submitterId} records who proposed the name (issue #81) so the "user submitted" view
+     * can show a username -- persisted even when the row already existed and this insert no-ops,
+     * because the value is written on the winning insert, not this call. Caller assumes the
+     * displayName has already passed validation.
      */
-    public int insertSubmitted(String displayName, Race race, Gender gender) {
+    public int insertSubmitted(String displayName, Race race, Gender gender, Long submitterId) {
         if (displayName == null || displayName.isBlank()) {
             return 0;
         }
@@ -50,6 +53,7 @@ public class SubmissionInsertDao {
                 trimmed,
                 DeduplicationService.normalize(trimmed),
                 race.name(),
-                gender.name());
+                gender.name(),
+                submitterId);
     }
 }
