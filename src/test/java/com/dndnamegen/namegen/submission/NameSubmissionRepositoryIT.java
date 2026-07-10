@@ -137,6 +137,29 @@ class NameSubmissionRepositoryIT {
         assertThat(summaries.get(1).getSubmitterUsername()).isEqualTo("SecondSubmitter");
     }
 
+    /**
+     * Backs "my submissions" (GET /submissions/mine): every submission for one owner, regardless
+     * of status, most-recent-first, and excludes another owner's submissions entirely -- none of
+     * which a mocked-repository service test could demonstrate.
+     */
+    @Test
+    void findBySubmitterIdOrderByCreatedAtDescIdDesc_should_ReturnOwnSubmissionsNewestFirst_When_AnotherOwnerAlsoHasOne() {
+        User owner = userRepository.saveAndFlush(new User("MineOwner", "{bcrypt}$2a$10$submissionsubmissionsubmiss7"));
+        User other = userRepository.saveAndFlush(new User("OtherOwner", "{bcrypt}$2a$10$submissionsubmissionsubmiss8"));
+        NameSubmission ownerFirst =
+                nameSubmissionRepository.saveAndFlush(new NameSubmission(owner.getId(), "Aelar", Race.ELF, Gender.MASCULINE));
+        insertResolved(owner.getId(), "rejectedmine", "REJECTED");
+        nameSubmissionRepository.saveAndFlush(new NameSubmission(other.getId(), "Borin", Race.DWARF, Gender.MASCULINE));
+
+        List<NameSubmission> result = nameSubmissionRepository.findBySubmitterIdOrderByCreatedAtDescIdDesc(owner.getId());
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(NameSubmission::getSubmitterId).containsOnly(owner.getId());
+        // Newest first: the REJECTED row was inserted after the PENDING one.
+        assertThat(result.get(0).getStatus()).isEqualTo(SubmissionStatus.REJECTED);
+        assertThat(result.get(1).getId()).isEqualTo(ownerFirst.getId());
+    }
+
     private void insertResolved(Long submitterId, String normalized, String status) {
         jdbcTemplate.update(
                 "INSERT INTO name_submissions "

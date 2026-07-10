@@ -23,6 +23,16 @@ public interface NameSubmissionRepository extends JpaRepository<NameSubmission, 
             String normalizedName, Race race, Gender gender, SubmissionStatus status);
 
     /**
+     * Backs "my submissions" (owner-keyed, GET /submissions/mine): every submission this user
+     * has made, regardless of status, most-recent-first. Mirrors {@code
+     * FavoriteRepository.findByOwnerIdOrderByCreatedAtDescIdDesc} exactly, including its
+     * {@code id} tiebreaker -- two submissions in the same request can land on the same
+     * {@code Instant} (client-side {@code createdAt}, see {@code NameSubmission}'s constructor),
+     * and {@code createdAt} alone gives no stable order between them.
+     */
+    List<NameSubmission> findBySubmitterIdOrderByCreatedAtDescIdDesc(Long submitterId);
+
+    /**
      * Backs the admin submissions queue (PR 4): one row per PENDING submission, oldest-first (so
      * the longest-waiting proposals surface first), with the submitter's username joined in for
      * display. Ad-hoc {@code JOIN User u ON u.id = s.submitterId} rather than a mapped

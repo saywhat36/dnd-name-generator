@@ -2715,3 +2715,35 @@ tabs) could still POST an action against an already-resolved id -- `AdminSubmiss
 the submission fresh and returns `false` (mapped to `404` by the controller) if it's missing or not
 `PENDING`, so a second action on the same id can't silently re-fire `insertSubmitted` or overwrite
 an earlier reviewer's decision.
+
+## 2026-07-10: "My submissions" view (issue #85)
+`GET /submissions/mine` -- owner-keyed, read-only, every submission this identity has ever made
+regardless of status (`PENDING`/`APPROVED`/`REJECTED`), most-recent-first. This is a genuine
+product decision, not a given: `name_reports` deliberately has no equivalent self-view (see the
+`report/` package's own history in this log) on the reasoning that a report is a one-way signal the
+reporter has no ongoing stake in. A submission is different -- the submitter is waiting on a
+decision, so "did anyone look at this yet" is a real question worth answering, unlike "did anyone
+act on my report."
+
+**Mirrors `FavoriteController.listFavorites`'s shape exactly**: `NameSubmissionRepository
+.findBySubmitterIdOrderByCreatedAtDescIdDesc` is a derived query copied from `FavoriteRepository
+.findByOwnerIdOrderByCreatedAtDescIdDesc`, including its `id` secondary sort key -- two submissions
+in the same request can land on the same `Instant` (`createdAt` is set client-side in the
+`NameSubmission` constructor, not DB-generated), so `createdAt` alone gives no stable order.
+`NameSubmissionService.listMySubmissions` returns entities; `NameSubmissionController
+.listMySubmissions` maps them to a new `submission/dto/SubmissionResponse` record (mirrors
+`name/dto/NameResponse`'s split -- the service stays entity-typed, the controller owns the
+API-shape decision). Registered `GET /submissions/mine` alongside `POST /submissions` in
+`WebSecurityConfig`'s `.authenticated()` block; `@PreAuthorize("isAuthenticated()")` is the same
+belt-and-braces second check every other route here carries.
+
+**Testing.** `NameSubmissionServiceTest` gained two cases for the pass-through
+(`listMySubmissions_should_ReturnOwnersSubmissions_When_TheyHaveAny`/`..._ReturnEmptyList...`).
+`NameSubmissionControllerTest` gained the authenticated-200-with-JSON-body case and the
+anonymous-redirect case (the latter hits the same pre-existing local JDK-26 401-vs-3xx baseline
+quirk documented throughout this log -- reproduces identically on the already-passing `POST
+/submissions` redirect test, isolated and confirmed independently green). `NameSubmissionRepositoryIT`
+gained a case proving the query returns only the calling owner's rows (a second owner's submission
+in the same table is excluded) and orders newest-first -- verified via a throwaway `postgres:16-
+alpine` container running the query's raw-SQL equivalent by hand, same as prior slices, since
+Testcontainers remains unreliable in this local environment.
