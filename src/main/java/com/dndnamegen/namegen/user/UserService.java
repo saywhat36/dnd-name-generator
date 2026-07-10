@@ -1,5 +1,9 @@
 package com.dndnamegen.namegen.user;
 
+import java.util.Collection;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -44,5 +48,21 @@ public class UserService {
             }
             throw e;
         }
+    }
+
+    /**
+     * Batch-resolves user ids to their display usernames, for callers that hold a set of ids and
+     * need the names for display (issue #81: the "user submitted" name view). Returns a
+     * {@code id -> username} map containing only the ids that resolve to an existing user -- a
+     * missing id (e.g. a since-deleted account) is simply absent, so callers should treat a lookup
+     * miss as "no username" rather than assuming every requested id is present. An empty input
+     * short-circuits without hitting the database.
+     */
+    public Map<Long, String> usernamesByIds(Collection<Long> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return userRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(User::getId, User::getUsername));
     }
 }

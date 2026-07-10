@@ -50,6 +50,11 @@ public class Name {
     @Column(name = "generation_log_id")
     private Long generationLogId;
 
+    // Set only for USER_SUBMITTED rows (issue #81): the user who proposed the name, recorded at
+    // approve time so the "user submitted" view can show a username. NULL for CURATED/AI rows.
+    @Column(name = "submitter_id")
+    private Long submitterId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -97,6 +102,10 @@ public class Name {
 
     public Long getGenerationLogId() {
         return generationLogId;
+    }
+
+    public Long getSubmitterId() {
+        return submitterId;
     }
 
     public Instant getCreatedAt() {

@@ -171,6 +171,11 @@
             content:"※";position:absolute;left:-1.5ch;top:.32em;font-size:.5em;
             opacity:0;transition:opacity .35s var(--ease);
         }
+        /* "submitted by <user>" byline under a user-submitted name (issue #81) */
+        .nm .by{
+            display:block;font-family:var(--sans);font-size:.66rem;font-weight:400;
+            letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:.3em;
+        }
         .row:hover .nm{transform:translateX(.55ch)}
         .row:hover .nm::before{opacity:.55}
         .tag-icon{display:inline-flex;color:var(--muted)}
@@ -342,7 +347,7 @@
                 class="opt"
                 th:each="s : ${sources}"
                 th:id="'source-' + ${s.name()}"
-                th:text="${s.name() == 'AI_GENERATED' ? 'AI' : 'Handbook'}"
+                th:text="${s.label}"
                 th:classappend="${s == selectedSource} ? 'selected' : ''"
                 th:attr="aria-pressed=${s == selectedSource},hx-get=@{/browse(race=${selectedRace},gender=${selectedGender},source=${s})}"
                 hx-target="#browser"
@@ -358,12 +363,14 @@
 
         <ul class="names" aria-live="polite" aria-atomic="false">
             <li class="row" th:each="n : ${names}">
-                <span class="nm" th:text="${n.displayName}"></span>
-                <span class="tag-icon" th:attr="title=${n.source.name() != 'AI_GENERATED'} ? 'Handbook' : 'AI'">
-                    <svg th:if="${n.source.name() != 'AI_GENERATED'}" class="ic ic-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-                    </svg>
+                <span class="nm">
+                    <span th:text="${n.displayName}">Name</span>
+                    <span class="by"
+                          th:if="${n.source.name() == 'USER_SUBMITTED' and submitterUsernames.containsKey(n.id)}"
+                          th:text="'submitted by ' + ${submitterUsernames.get(n.id)}">submitted by user</span>
+                </span>
+                <span class="tag-icon"
+                      th:title="${n.source.name() == 'AI_GENERATED' ? 'AI' : (n.source.name() == 'USER_SUBMITTED' ? 'User submitted' : 'Handbook')}">
                     <svg th:if="${n.source.name() == 'AI_GENERATED'}" class="ic ic-robot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <rect x="4" y="8" width="16" height="12" rx="2"/>
                         <circle cx="9" cy="14" r="1.3" fill="currentColor" stroke="none"/>
@@ -372,6 +379,14 @@
                         <circle cx="12" cy="3" r="1" fill="currentColor" stroke="none"/>
                         <line x1="4" y1="13" x2="2" y2="13"/>
                         <line x1="20" y1="13" x2="22" y2="13"/>
+                    </svg>
+                    <svg th:if="${n.source.name() == 'USER_SUBMITTED'}" class="ic ic-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="8" r="4"/>
+                        <path d="M4 21a8 8 0 0 1 16 0"/>
+                    </svg>
+                    <svg th:if="${n.source.name() != 'AI_GENERATED' and n.source.name() != 'USER_SUBMITTED'}" class="ic ic-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
                     </svg>
                 </span>
                 <button
@@ -430,7 +445,7 @@
         <div
             class="more"
             sec:authorize="isAuthenticated()"
-            th:if="${selectedSource != T(com.dndnamegen.namegen.name.NameSourceFilter).CURATED and !generatingMore and aiPoolSize < aiPoolCap}">
+            th:if="${(selectedSource == T(com.dndnamegen.namegen.name.NameSourceFilter).AI_GENERATED or selectedSource == T(com.dndnamegen.namegen.name.NameSourceFilter).BOTH) and !generatingMore and aiPoolSize < aiPoolCap}">
             <button
                 type="button"
                 class="cta"

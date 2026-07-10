@@ -34,15 +34,29 @@ class NameServiceTest {
     }
 
     @Test
-    void getNames_should_QueryCuratedAndUserSubmitted_When_SourceIsCurated() {
+    void getNames_should_QueryCuratedOnly_When_SourceIsCurated() {
         Name curatedName = mock(Name.class);
         when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(
-                        Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, List.of(NameSource.CURATED, NameSource.USER_SUBMITTED)))
+                        Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, List.of(NameSource.CURATED)))
                 .thenReturn(List.of(curatedName));
 
         List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED);
 
         assertThat(result).containsExactly(curatedName);
+        verify(poolReplenishmentService, never()).replenish(any(), any());
+    }
+
+    @Test
+    void getNames_should_QueryUserSubmittedOnly_When_SourceIsUserSubmitted() {
+        Name userSubmittedName = nameWithSource(NameSource.USER_SUBMITTED);
+        when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(
+                        Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, List.of(NameSource.USER_SUBMITTED)))
+                .thenReturn(List.of(userSubmittedName));
+
+        List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.USER_SUBMITTED);
+
+        assertThat(result).containsExactly(userSubmittedName);
+        // No AI in this source, so no replenishment is ever triggered for the user-submitted view.
         verify(poolReplenishmentService, never()).replenish(any(), any());
     }
 
@@ -60,7 +74,7 @@ class NameServiceTest {
     }
 
     @Test
-    void getNames_should_QueryCuratedAiGeneratedAndUserSubmitted_When_SourceIsBoth() {
+    void getNames_should_QueryCuratedAndAiGenerated_When_SourceIsBoth() {
         Name curatedName = nameWithSource(NameSource.CURATED);
         List<Name> aiNames = aiGeneratedNames(10);
         List<Name> allNames = Stream.concat(Stream.of(curatedName), aiNames.stream()).toList();
@@ -68,7 +82,7 @@ class NameServiceTest {
                         Race.ELF,
                         Gender.FEMININE,
                         NameStatus.ACTIVE,
-                        List.of(NameSource.CURATED, NameSource.AI_GENERATED, NameSource.USER_SUBMITTED)))
+                        List.of(NameSource.CURATED, NameSource.AI_GENERATED)))
                 .thenReturn(allNames);
 
         List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.BOTH);
@@ -120,20 +134,20 @@ class NameServiceTest {
     }
 
     @Test
-    void getNames_should_IncludeUserSubmittedUnderCuratedFilter() {
+    void getNames_should_NotIncludeUserSubmittedUnderCuratedFilter() {
+        // Issue #81: user-submitted names are no longer folded into CURATED -- the CURATED filter
+        // now queries the CURATED source alone, so USER_SUBMITTED can never be requested here.
         Name curatedName = nameWithSource(NameSource.CURATED);
-        Name userSubmittedName = nameWithSource(NameSource.USER_SUBMITTED);
-        List<Name> mixedNames = List.of(curatedName, userSubmittedName);
         when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(
-                        Race.ELF,
-                        Gender.FEMININE,
-                        NameStatus.ACTIVE,
-                        List.of(NameSource.CURATED, NameSource.USER_SUBMITTED)))
-                .thenReturn(mixedNames);
+                        Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, List.of(NameSource.CURATED)))
+                .thenReturn(List.of(curatedName));
 
         List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED);
 
-        assertThat(result).containsExactlyElementsOf(mixedNames);
+        assertThat(result).containsExactly(curatedName);
+        verify(nameRepository)
+                .findByRaceAndGenderAndStatusAndSourceIn(
+                        Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, List.of(NameSource.CURATED));
         verify(poolReplenishmentService, never()).replenish(any(), any());
     }
 

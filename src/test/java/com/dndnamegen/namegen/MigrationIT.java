@@ -146,4 +146,42 @@ class MigrationIT {
             jdbcTemplate.update("DELETE FROM names WHERE id = ?", userSubmittedNameId);
         }
     }
+
+    /**
+     * V10 (issue #81): names carry a nullable submitter_id FK -> users so the "user submitted"
+     * view can attribute an approved name to a username. Verifies the dedicated index exists, that
+     * a valid submitter is stored, and that the FK rejects a submitter id with no matching user.
+     */
+    @Test
+    void names_should_HaveSubmitterFkColumnAndIndex_ForUserSubmittedAttribution() {
+        Integer submitterIndexCount = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM pg_indexes WHERE tablename = 'names' AND indexname = 'idx_names_submitter'",
+                Integer.class);
+        assertThat(submitterIndexCount).isEqualTo(1);
+
+        Long userId = jdbcTemplate.queryForObject(
+                "INSERT INTO users (username, username_norm, password_hash) VALUES (?, ?, ?) RETURNING id",
+                Long.class, "V10TestUser", "v10testuser", "{bcrypt}$2a$10$v10v10v10v10v10v10v10v");
+        Long nameId = jdbcTemplate.queryForObject(
+                "INSERT INTO names (display_name, normalized_name, race, gender, source, submitter_id) "
+                        + "VALUES (?, ?, 'ELF', 'MASCULINE', 'USER_SUBMITTED', ?) RETURNING id",
+                Long.class, "V10 Test Name", "v10 test name", userId);
+
+        try {
+            Long storedSubmitter = jdbcTemplate.queryForObject(
+                    "SELECT submitter_id FROM names WHERE id = ?", Long.class, nameId);
+            assertThat(storedSubmitter).isEqualTo(userId);
+
+            // FK rejects a submitter id that references no user.
+            assertThatThrownBy(() -> jdbcTemplate.update(
+                            "INSERT INTO names (display_name, normalized_name, race, gender, source, submitter_id) "
+                                    + "VALUES ('V10 Orphan', 'v10 orphan', 'ELF', 'MASCULINE', 'USER_SUBMITTED', ?)",
+                            Long.MAX_VALUE))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        } finally {
+            jdbcTemplate.update("DELETE FROM names WHERE id = ?", nameId);
+            jdbcTemplate.update("DELETE FROM names WHERE normalized_name = 'v10 orphan'");
+            jdbcTemplate.update("DELETE FROM users WHERE id = ?", userId);
+        }
+    }
 }

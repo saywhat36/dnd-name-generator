@@ -121,7 +121,7 @@ class AdminSubmissionServiceTest {
 
         adminSubmissionService.bulkApprove(List.of(7L, 8L), REVIEWER_OWNER_ID);
 
-        verify(submissionInsertDao, times(2)).insertSubmitted("Aelar", Race.ELF, Gender.MASCULINE);
+        verify(submissionInsertDao, times(2)).insertSubmitted("Aelar", Race.ELF, Gender.MASCULINE, 1L);
         verify(nameSubmissionRepository)
                 .updateStatus(eq(7L), eq(SubmissionStatus.APPROVED), eq(REVIEWER_OWNER_ID), any());
         verify(nameSubmissionRepository)
@@ -143,7 +143,7 @@ class AdminSubmissionServiceTest {
 
         adminSubmissionService.bulkApprove(List.of(7L, 8L), REVIEWER_OWNER_ID);
 
-        verify(submissionInsertDao, times(1)).insertSubmitted(any(), any(), any());
+        verify(submissionInsertDao, times(1)).insertSubmitted(any(), any(), any(), any());
         verify(nameSubmissionRepository)
                 .updateStatus(eq(7L), eq(SubmissionStatus.APPROVED), eq(REVIEWER_OWNER_ID), any());
         verify(nameSubmissionRepository, never())
@@ -159,7 +159,7 @@ class AdminSubmissionServiceTest {
 
         adminSubmissionService.bulkReject(List.of(7L, 8L), REVIEWER_OWNER_ID);
 
-        verify(submissionInsertDao, never()).insertSubmitted(any(), any(), any());
+        verify(submissionInsertDao, never()).insertSubmitted(any(), any(), any(), any());
         verify(nameSubmissionRepository)
                 .updateStatus(eq(7L), eq(SubmissionStatus.REJECTED), eq(REVIEWER_OWNER_ID), any());
         verify(nameSubmissionRepository)
@@ -170,12 +170,12 @@ class AdminSubmissionServiceTest {
     void approve_should_InsertNameAndMarkApproved_When_SubmissionIsPending() {
         NameSubmission submission = pendingSubmission();
         when(nameSubmissionRepository.findById(7L)).thenReturn(Optional.of(submission));
-        when(submissionInsertDao.insertSubmitted("Aelar", Race.ELF, Gender.MASCULINE)).thenReturn(1);
+        when(submissionInsertDao.insertSubmitted("Aelar", Race.ELF, Gender.MASCULINE, 1L)).thenReturn(1);
 
         boolean result = adminSubmissionService.approve(7L, REVIEWER_OWNER_ID);
 
         assertThat(result).isTrue();
-        verify(submissionInsertDao).insertSubmitted("Aelar", Race.ELF, Gender.MASCULINE);
+        verify(submissionInsertDao).insertSubmitted("Aelar", Race.ELF, Gender.MASCULINE, 1L);
         verify(nameSubmissionRepository)
                 .updateStatus(eq(7L), eq(SubmissionStatus.APPROVED), eq(REVIEWER_OWNER_ID), any());
     }
@@ -189,7 +189,7 @@ class AdminSubmissionServiceTest {
     void approve_should_StillMarkApproved_When_NameAlreadyExists() {
         NameSubmission submission = pendingSubmission();
         when(nameSubmissionRepository.findById(7L)).thenReturn(Optional.of(submission));
-        when(submissionInsertDao.insertSubmitted("Aelar", Race.ELF, Gender.MASCULINE)).thenReturn(0);
+        when(submissionInsertDao.insertSubmitted("Aelar", Race.ELF, Gender.MASCULINE, 1L)).thenReturn(0);
 
         boolean result = adminSubmissionService.approve(7L, REVIEWER_OWNER_ID);
 
@@ -205,7 +205,7 @@ class AdminSubmissionServiceTest {
         boolean result = adminSubmissionService.approve(999L, REVIEWER_OWNER_ID);
 
         assertThat(result).isFalse();
-        verify(submissionInsertDao, never()).insertSubmitted(any(), any(), any());
+        verify(submissionInsertDao, never()).insertSubmitted(any(), any(), any(), any());
         verify(nameSubmissionRepository, never()).updateStatus(any(), any(), any(), any());
     }
 
@@ -218,7 +218,7 @@ class AdminSubmissionServiceTest {
         boolean result = adminSubmissionService.approve(7L, REVIEWER_OWNER_ID);
 
         assertThat(result).isFalse();
-        verify(submissionInsertDao, never()).insertSubmitted(any(), any(), any());
+        verify(submissionInsertDao, never()).insertSubmitted(any(), any(), any(), any());
         verify(nameSubmissionRepository, never()).updateStatus(any(), any(), any(), any());
     }
 
@@ -230,7 +230,7 @@ class AdminSubmissionServiceTest {
         boolean result = adminSubmissionService.reject(7L, REVIEWER_OWNER_ID);
 
         assertThat(result).isTrue();
-        verify(submissionInsertDao, never()).insertSubmitted(any(), any(), any());
+        verify(submissionInsertDao, never()).insertSubmitted(any(), any(), any(), any());
         verify(nameSubmissionRepository)
                 .updateStatus(eq(7L), eq(SubmissionStatus.REJECTED), eq(REVIEWER_OWNER_ID), any());
     }
