@@ -287,14 +287,26 @@ Scoped deliberately, not blanket:
   around the `ChatClient` call. This is the actual bill-protection
   mechanism, and it has to live where the LLM is called, since standard
   name requests never reach the HTTP-level filter for LLM purposes.
-- **`RateLimitFilter` (per-session, per-IP)** -- applies to endpoints
-  that make a *synchronous* LLM call on the request path. In Phase 1
-  that's effectively none (name-serving is DB-only); it becomes
-  meaningful in Phase 3 for the backstory endpoint. Applying it to
-  name-serving today would penalize a cheap DB read for no reason.
-- Per-session Bucket4j buckets are backed by Caffeine with a TTL, not
-  an unbounded map -- sessions are just cookies, so nothing naturally
-  evicts them otherwise.
+- **`RateLimitFilter` (per-owner)** -- originally scoped to endpoints
+  making a *synchronous* LLM call on the request path (none existed in
+  Phase 1; still meaningful for Phase 3's backstory endpoint). Issue #87
+  generalized the "why": the same filter also protects any authenticated
+  write endpoint from being flooded, regardless of whether an LLM is
+  involved -- `POST /submissions` (the user-submitted-names moderation
+  queue) is the first endpoint wired to it for exactly that reason: an
+  unbounded flood of junk submissions is a real cost (an admin has to
+  triage every one), even though the write itself is cheap. Registered
+  via an explicit `FilterRegistrationBean` scoped to that one URL, not a
+  `@Component` (which would apply it to `/*` by default) -- see
+  `RateLimitFilterConfig`. Applying it to plain name-serving GETs would
+  still penalize a cheap DB read for no reason, so those remain untouched.
+- Keyed per authenticated owner id, not per session -- every route this
+  filter is wired to already requires login, and a session id cookie can
+  be rotated by a client that stays logged in, which would trivially
+  bypass a session-keyed limit on an authenticated-only route.
+- Buckets are backed by a Caffeine cache with a TTL, not an unbounded
+  map -- owner ids accumulate for as long as the app runs, so something
+  has to evict inactive ones.
 
 ## Prompt versioning
 Version is encoded in the template itself -- e.g.
