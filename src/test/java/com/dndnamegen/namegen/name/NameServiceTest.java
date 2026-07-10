@@ -74,18 +74,21 @@ class NameServiceTest {
     }
 
     @Test
-    void getNames_should_QueryCuratedAndAiGenerated_When_SourceIsBoth() {
+    void getNames_should_QueryEverySource_When_SourceIsAll() {
         Name curatedName = nameWithSource(NameSource.CURATED);
+        Name userSubmittedName = nameWithSource(NameSource.USER_SUBMITTED);
         List<Name> aiNames = aiGeneratedNames(10);
-        List<Name> allNames = Stream.concat(Stream.of(curatedName), aiNames.stream()).toList();
+        List<Name> allNames = Stream.concat(
+                        Stream.of(curatedName, userSubmittedName), aiNames.stream())
+                .toList();
         when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(
                         Race.ELF,
                         Gender.FEMININE,
                         NameStatus.ACTIVE,
-                        List.of(NameSource.CURATED, NameSource.AI_GENERATED)))
+                        List.of(NameSource.CURATED, NameSource.AI_GENERATED, NameSource.USER_SUBMITTED)))
                 .thenReturn(allNames);
 
-        List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.BOTH);
+        List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.ALL);
 
         assertThat(result).containsExactlyElementsOf(allNames);
         verify(poolReplenishmentService, never()).replenish(any(), any());
@@ -113,11 +116,11 @@ class NameServiceTest {
     }
 
     @Test
-    void getNames_should_TriggerReplenish_When_SourceIsBothAndPoolBelowThreshold() {
+    void getNames_should_TriggerReplenish_When_SourceIsAllAndPoolBelowThreshold() {
         when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(any(), any(), any(), any()))
                 .thenReturn(List.of());
 
-        nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.BOTH);
+        nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.ALL);
 
         verify(poolReplenishmentService).replenish(Race.ELF, Gender.FEMININE);
     }

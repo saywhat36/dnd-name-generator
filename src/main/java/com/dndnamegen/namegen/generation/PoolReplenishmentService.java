@@ -28,7 +28,7 @@ import org.springframework.stereotype.Service;
  *
  * <p>Callers decide *when* to trigger replenishment (the "threshold" in
  * "threshold-triggered") -- that wiring lands in NameService in the next
- * Week 3 slice, once the CURATED/AI_GENERATED/BOTH source toggle exists.
+ * Week 3 slice, once the CURATED/AI_GENERATED/USER_SUBMITTED/ALL source toggle exists.
  * This class only decides whether a triggered call should actually generate
  * anything, via the budget/cap/examples checks below.
  */

@@ -90,7 +90,7 @@ app:
     batch-size: 5
     # NameService triggers replenish(race, gender) when a combo's ACTIVE/AI_GENERATED
     # count drops below this -- checked only for requests whose source toggle includes
-    # AI_GENERATED (AI_GENERATED or BOTH); CURATED-only requests never trigger it.
+    # AI_GENERATED (AI_GENERATED or ALL); CURATED-only requests never trigger it.
     replenish-threshold: 5
     budget:
       # Global ceiling on real generation calls per day, across all combos --

@@ -169,7 +169,7 @@ public class NameBrowserController {
     /**
      * Applies the browser's sort toggle (issue #79) to the already-fetched result list. Done
      * in-memory here rather than as a repository {@code ORDER BY} so a single ordering covers
-     * every {@link NameSourceFilter} (including BOTH, which merges two sources) without each
+     * every {@link NameSourceFilter} (including ALL, which merges every source) without each
      * query having to grow a sort clause, and so DEFAULT stays a true no-op that preserves the
      * query's own order. Returns a new list for the sorted cases -- the source list may be
      * immutable (e.g. the repository's or a test's {@code List.of(...)}), so it is never sorted
