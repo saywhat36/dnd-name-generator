@@ -2802,3 +2802,66 @@ bulk-approve/-reject cases including the skip-already-resolved case.
 multi-page case verifying `totalElements`/`totalPages` and that page 1 returns rows page 0 didn't --
 also hand-verified against a throwaway `postgres:16-alpine` container running the `LIMIT`/`OFFSET`
 raw-SQL equivalent, same as prior slices.
+
+## 2026-07-10: Wire `RateLimitFilter` to `POST /submissions` (issue #87)
+`RateLimitFilter` (Week 6, Phase 1) was deliberately built unregistered -- no `@Component`, no
+`FilterRegistrationBean` -- because Spring Boot auto-registers any bare `Filter` bean against `/*`
+by default, and the filter's original purpose (protecting a *synchronous LLM call* on the request
+path) had no real target in Phase 1. That earlier entry explicitly left two decisions for whoever
+did the actual wiring: what it should be registered against, and whether it should key on session
+id or owner id. This is that wiring.
+
+**The rationale generalizes beyond "protect an LLM call."** `POST /submissions` makes no LLM call
+at all -- it's a DB write gated by `QualityGateService` (regex/charset/blocklist), not a network
+call. But a flood of junk submissions is a real cost regardless: every row lands in the admin
+moderation queue and has to be triaged by a human. `RateLimitFilter`'s actual job -- bound how fast
+one identity can hit an endpoint -- doesn't care whether the thing being protected is an LLM bill or
+an admin's attention; `docs/ARCHITECTURE.md`'s "Rate limiting" section is updated to reflect this
+broader framing rather than the LLM-specific one it had when nothing was wired yet.
+
+**Registered via an explicit `FilterRegistrationBean` (`RateLimitFilterConfig`), scoped to exactly
+`/submissions`, not a `@Component`.** Still the same reasoning the original entry gave for leaving
+the annotation off -- a bare `@Component` would apply to every route, including plain name-serving
+GETs, which `docs/ARCHITECTURE.md` explicitly says not to penalize. `setOrder(SecurityProperties
+.DEFAULT_FILTER_ORDER + 1)` is explicit, not left to `FilterRegistrationBean`'s unset default
+(`Ordered.LOWEST_PRECEDENCE`) -- it happens to land in the right place either way today, but
+spelling it out means a filter registered later with an explicit low order can't silently break the
+ordering this filter depends on (see next point) without the intent being visibly violated in code,
+not just by omission.
+
+**Rekeyed from session id to owner id.** The original `RateLimitFilter` read `SessionIdFilter
+.REQUEST_ATTRIBUTE`, since at the time it was written there was no authenticated-only endpoint to
+wire it to. `POST /submissions` is authenticated-only (route-level + `@PreAuthorize`, since PR 2), so
+every request reaching this filter already has a resolved owner id -- and unlike a session id
+cookie, which a client can clear per-request while remaining logged in (a separate cookie from
+Spring Security's own session), owner id can't be rotated by the caller. Session-keying an
+authenticated-only endpoint's rate limit would have left exactly that bypass open. Reads the
+authenticated principal via `SecurityContextHolder.getContext().getAuthentication()` rather than a
+request attribute -- safe because `RateLimitFilterConfig` registers this filter with an order after
+`SecurityProperties.DEFAULT_FILTER_ORDER` (-100, where Spring Security's own filter chain runs), so
+by the time this filter executes, the request has already passed authentication (and Spring
+Security's chain, if it denies the request, never calls onward to this filter at all -- confirmed
+by the end-to-end check below, not assumed from filter-ordering theory alone).
+
+**Config**: `app.rate-limit.submissions.*` (`capacity: 5`, `refill-period: 1m`, `bucket-ttl: 10m`),
+following the existing `app.*`/`@Value` convention this repo already uses for `quality-gate`/
+`pool-replenishment`. Chosen to be generous for a genuine user (nobody submits more than a
+handful of names in a minute) while still blunting a scripted flood.
+
+**Verification.** Unit tests (`RateLimitFilterTest`, rewritten for owner-based keying via
+`SecurityContextHolder` + `@AfterEach` context clearing so tests don't leak authentication state
+into each other; `RateLimitFilterConfigTest`, constructing the `@Bean` method directly rather than
+loading a Spring context, matching this package's existing "construct directly" precedent) cover
+the filter and the registration bean in isolation, but neither proves the two are wired together
+correctly inside a real Spring context. Given this repo has no `@SpringBootTest(webEnvironment =
+RANDOM_PORT)` infrastructure (noted elsewhere in this log) and Testcontainers is unreliable here,
+verified the actual wiring by running the real application against a local `docker compose`-managed
+Postgres (`./mvnw spring-boot:run`) and driving it with `curl`: registered a user, logged in, then
+fired six rapid `POST /submissions` requests -- the first five reached the controller (each `400`,
+correctly rejected by `QualityGateService` for containing digits, unrelated to rate limiting but
+proof the requests weren't being blocked early), and the sixth came back `429` before reaching the
+controller at all. A follow-up `GET /submissions/mine` on the same exhausted bucket returned `404`
+(that route didn't exist yet on the branch this verification ran against -- issue #85 wasn't merged
+at the time), not `429` -- proof either way that the `FilterRegistrationBean`'s exact-path scoping
+to `/submissions` doesn't leak onto a different URL, since a leaked rate limit would have produced
+`429` regardless of whether a handler exists for the path.

@@ -62,6 +62,14 @@ app:
     # Illustrative starter list, not exhaustive -- extend as real/famous names
     # turn up in generated output. Case-insensitive match.
     blocklist: Harry Potter, Frodo Baggins, Gandalf, Legolas, Aragorn, Elon Musk
+  rate-limit:
+    submissions:
+      # RateLimitFilter, wired to POST /submissions only (issue #87) -- keyed per
+      # authenticated owner, not per session (see RateLimitFilter's own Javadoc).
+      # 5/minute is generous for a genuine user, tight enough to blunt a scripted flood.
+      capacity: 5
+      refill-period: 1m
+      bucket-ttl: 10m
   async:
     pool-replenishment:
       # Small bounded pool -- replenishment is a background task, not a

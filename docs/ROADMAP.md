@@ -95,9 +95,13 @@ Status legend: not started / in progress / done
 - [x] `RateLimitFilter` scoped correctly: not applied to name-serving
   (DB-only), reserved for endpoints with a synchronous LLM call
   (none yet in Phase 1 -- this becomes active in Phase 3) -- built as
-  unregistered scaffolding in Phase 1, wired to a real endpoint in Phase 3
-- [x] Per-session Bucket4j buckets backed by Caffeine with a TTL, not
-  an unbounded map
+  unregistered scaffolding in Phase 1. First actually wired to a real
+  endpoint in Phase 2.5 (`POST /submissions`, issue #87, see below) --
+  not for LLM-cost protection, but the same filter generalizes to any
+  authenticated write endpoint worth flood-protecting
+- [x] Per-owner Bucket4j buckets backed by Caffeine with a TTL, not
+  an unbounded map (originally per-session -- rekeyed to per-owner when
+  actually wired in issue #87, see `DECISIONS.md`)
 - [x] htmx + Thymeleaf frontend: race buttons, gender buttons, source
   toggle (as button groups, not dropdowns)
 - [x] htmx + Thymeleaf frontend: favorite/report actions
@@ -216,8 +220,15 @@ series of small PRs, each independently releasable.
   existing single-id `approve`/`reject` to a checked batch, best-effort
   (an already-resolved id in the batch is skipped, not a whole-batch
   failure) -- see `DECISIONS.md`
-- [ ] Wire the existing (unwired) `RateLimitFilter` scaffolding to
-  `/submissions` ([#87](https://github.com/saywhat36/dnd-name-generator/issues/87))
+- [x] Wire the existing (unwired) `RateLimitFilter` scaffolding to
+  `/submissions` ([#87](https://github.com/saywhat36/dnd-name-generator/issues/87)):
+  5 submissions/minute per authenticated owner (`app.rate-limit.submissions.*`),
+  registered via `RateLimitFilterConfig`'s `FilterRegistrationBean` scoped
+  to `POST /submissions` only -- not a blanket `@Component`. Rekeyed the
+  filter from session id to owner id in the process (see `DECISIONS.md`
+  for why). Verified end-to-end against a live local instance: the 6th
+  rapid `POST /submissions` from one logged-in user got `429`, a sibling
+  route (`GET /submissions/mine`) was unaffected
 
 ## Phase 3 -- Backstories + streaming (deferred)
 - [ ] Decide backstory persistence model (shared/cached on the name vs.
