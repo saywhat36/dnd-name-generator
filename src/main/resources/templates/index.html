@@ -58,8 +58,21 @@
             padding-block:1.1rem;
             font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;
         }
-        .nav .mark{font-size:1.05rem;letter-spacing:0;display:inline-block;transition:transform .6s var(--ease)}
-        .nav a:hover .mark{transform:rotate(180deg)}
+        /* nav center glyph is a d20 (the D&D die) that tumbles on hover -- on-theme with the
+           "Let's roll" outro, and a d20 over a plain d6 since this is a D&D tool. The other ※
+           marks (CTAs, footer, name/selection bullets) stay as the typographic motif; only this
+           standalone, already-interactive back-to-top symbol becomes the die. The roll is a
+           short bouncing spin, disabled wholesale by the prefers-reduced-motion block below. */
+        .nav .mark{display:inline-flex;align-items:center;line-height:0}
+        .nav .mark .die{width:1.35rem;height:1.35rem;display:block}
+        .nav a:hover .mark .die{animation:roll .7s var(--ease)}
+        @keyframes roll{
+            0%{transform:translateY(0) rotate(0)}
+            25%{transform:translateY(-4px) rotate(140deg)}
+            55%{transform:translateY(0) rotate(280deg)}
+            72%{transform:translateY(-2px) rotate(330deg)}
+            100%{transform:translateY(0) rotate(360deg)}
+        }
         .nav .right{justify-self:end}
         .nav .logout-form{display:inline}
         .nav .link-button{
@@ -250,7 +263,7 @@
 
 <header class="nav wrap">
     <span>D&amp;D</span>
-    <a href="#top" aria-label="Back to start"><span class="mark" aria-hidden="true">※</span></a>
+    <a href="#top" aria-label="Back to start" title="Roll back to top"><span class="mark" aria-hidden="true"><svg class="die" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 20.5 7 20.5 17 12 22 3.5 17 3.5 7Z"/><path d="M12 6 6.8 15 17.2 15Z"/><path d="M12 6V2"/><path d="M6.8 15 3.5 7"/><path d="M6.8 15 3.5 17"/><path d="M17.2 15 20.5 7"/><path d="M17.2 15 20.5 17"/><path d="M6.8 15 12 22"/><path d="M17.2 15 12 22"/></svg></span></a>
     <span class="right">
         <a href="#works">
             <span class="swap"><span>Names</span><span aria-hidden="true">Names</span></span>&nbsp;&darr;
