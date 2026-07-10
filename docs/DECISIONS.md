@@ -2747,3 +2747,58 @@ gained a case proving the query returns only the calling owner's rows (a second 
 in the same table is excluded) and orders newest-first -- verified via a throwaway `postgres:16-
 alpine` container running the query's raw-SQL equivalent by hand, same as prior slices, since
 Testcontainers remains unreliable in this local environment.
+
+## 2026-07-10: Admin submissions queue -- pagination and bulk actions (issue #86)
+`MAX_PENDING` (200, from PR 4) truncated the queue rather than paginating it -- past 200 pending
+submissions, the tail was simply invisible, with no way to reach it. Replaced with real pagination:
+`GET /admin/submissions?page=N` (0-indexed, `PAGE_SIZE = 50` rows/page), backed by
+`NameSubmissionRepository.findPendingSummaries` now returning `Page<PendingSubmissionSummary>`
+instead of a bare `List` capped by a one-shot `Pageable`.
+
+**A real `COUNT` query here, not the "avoid redundant COUNT" pattern from `NameService.getNames`.**
+That earlier fix (see its own entry in this log) removed a COUNT that re-derived a number already
+sitting in a list just fetched above it in the same method -- a genuinely redundant round trip.
+This is different: nothing else on this request path already knows the total PENDING count, so the
+`countQuery` supplied alongside `findPendingSummaries`'s `@Query` is the only way to get one, not a
+duplicate of work already done. An explicit `countQuery` is given rather than relying on Spring
+Data's auto-derivation, since that derivation doesn't reliably strip the `JOIN`/`AS`-aliased column
+list this query already has for `findPendingSummaries`'s existing shape.
+
+**`PendingSubmissionsPage` (new record) carries `hasPrevious()`/`hasNext()` as plain arithmetic on
+`page`/`totalPages`**, not `Page<T>`'s own `isFirst()`/`isLast()` -- `AdminSubmissionService` maps
+`Page<PendingSubmissionSummary>` to `List<PendingSubmissionView>` before returning (same
+service-returns-mapped-view, not-the-raw-projection split every other admin/DTO pair in this
+codebase already follows), so the template needs a page-shaped object of its own rather than the
+Spring Data `Page` type leaking into the view layer.
+
+**Bulk approve/reject is one endpoint keyed by an `action` param, not two.** `POST
+/admin/submissions/bulk` takes `ids` (the checked set) and `action=approve|reject`, dispatching to
+the existing single-id `AdminSubmissionService.approve`/`reject` in a loop rather than writing new
+batch-specific moderation logic -- the single-id methods already have the correct PENDING-check/
+idempotent-insert/status-flip behavior, so bulk is purely "do this to more than one id."
+
+**Best-effort, not all-or-nothing.** An id in the batch that's already resolved (another admin beat
+this one to it, or the checkbox was left checked across a stale page) is silently skipped by the
+underlying `approve`/`reject` call (which already returns `false` rather than throwing for exactly
+this case) instead of aborting the whole batch. An admin selecting 50 rows should not have one stale
+checkbox block the other 49 -- that would be worse than the race condition bulk actions exist to
+tolerate.
+
+**Checkboxes live outside any `<form>`, wired via the HTML5 `form` attribute.** Each row already had
+its own single-action approve/reject `<form>` (kept, since a one-off decision on a single row is
+still the common case); nesting a bulk-select `<form>` around the whole table would make those
+invalid (nested `<form>` elements aren't legal HTML). Instead, one empty `<form id="bulk-form">` is
+declared once outside the table, and every checkbox plus both bulk buttons reference it via
+`form="bulk-form"` -- valid HTML, and htmx isn't needed for this since it's the same
+plain-server-rendered/PRG interaction model this whole screen already uses.
+
+**Testing.** `AdminSubmissionServiceTest` gained pagination pass-through and boundary coverage
+(`hasPrevious`/`hasNext` tested directly on the record, sidestepping `PageImpl`'s defensive
+total-recalculation when a mocked page's content size and total are inconsistent -- caught while
+writing the first version of this test, which asserted a `total` `PageImpl` silently overrode) and
+bulk-approve/-reject cases including the skip-already-resolved case.
+`AdminSubmissionControllerTest` gained the `?page=` pass-through and the bulk-action `403`/redirect/
+`400`-on-empty-selection/`400`-on-invalid-action cases. `NameSubmissionRepositoryIT` gained a
+multi-page case verifying `totalElements`/`totalPages` and that page 1 returns rows page 0 didn't --
+also hand-verified against a throwaway `postgres:16-alpine` container running the `LIMIT`/`OFFSET`
+raw-SQL equivalent, same as prior slices.

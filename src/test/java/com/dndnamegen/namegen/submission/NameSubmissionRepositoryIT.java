@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -127,14 +128,45 @@ class NameSubmissionRepositoryIT {
                 new NameSubmission(second.getId(), "Borin", Race.DWARF, Gender.MASCULINE));
         insertResolved(first.getId(), "rejectedname", "REJECTED");
 
-        List<PendingSubmissionSummary> summaries =
+        Page<PendingSubmissionSummary> page =
                 nameSubmissionRepository.findPendingSummaries(SubmissionStatus.PENDING, PageRequest.of(0, 10));
 
+        List<PendingSubmissionSummary> summaries = page.getContent();
         assertThat(summaries).hasSize(2);
         assertThat(summaries.get(0).getDisplayName()).isEqualTo("Aelar");
         assertThat(summaries.get(0).getSubmitterUsername()).isEqualTo("FirstSubmitter");
         assertThat(summaries.get(1).getDisplayName()).isEqualTo("Borin");
         assertThat(summaries.get(1).getSubmitterUsername()).isEqualTo("SecondSubmitter");
+        assertThat(page.getTotalElements()).isEqualTo(2);
+        assertThat(page.getTotalPages()).isEqualTo(1);
+    }
+
+    /**
+     * Regression guard for issue #86: with more PENDING rows than fit on one page, the total
+     * element/page counts must reflect the true PENDING total, and page 1 (0-indexed) must
+     * return the rows the first page didn't, in the same stable order.
+     */
+    @Test
+    void findPendingSummaries_should_PaginateAcrossPages_When_MoreRowsThanPageSize() {
+        User submitter = userRepository.saveAndFlush(new User("Prolific", "{bcrypt}$2a$10$submissionsubmissionsubmiss9"));
+        for (int i = 0; i < 3; i++) {
+            nameSubmissionRepository.saveAndFlush(
+                    new NameSubmission(submitter.getId(), "Name" + i, Race.ELF, Gender.MASCULINE));
+        }
+
+        Page<PendingSubmissionSummary> firstPage =
+                nameSubmissionRepository.findPendingSummaries(SubmissionStatus.PENDING, PageRequest.of(0, 2));
+        Page<PendingSubmissionSummary> secondPage =
+                nameSubmissionRepository.findPendingSummaries(SubmissionStatus.PENDING, PageRequest.of(1, 2));
+
+        assertThat(firstPage.getContent()).hasSize(2);
+        assertThat(secondPage.getContent()).hasSize(1);
+        assertThat(firstPage.getTotalElements()).isEqualTo(3);
+        assertThat(firstPage.getTotalPages()).isEqualTo(2);
+        assertThat(firstPage.getContent())
+                .extracting(PendingSubmissionSummary::getDisplayName)
+                .doesNotContainAnyElementsOf(
+                        secondPage.getContent().stream().map(PendingSubmissionSummary::getDisplayName).toList());
     }
 
     /**

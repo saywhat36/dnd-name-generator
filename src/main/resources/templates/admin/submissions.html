@@ -29,17 +29,57 @@
         }
         .actions button:hover{background:var(--ink);color:var(--paper)}
         .empty{color:var(--muted);padding-block:2rem}
+        /* Standard visually-hidden-but-accessible pattern -- referenced by the "Select"
+           column header but never defined (caught in review of #90); without it that text
+           rendered visibly instead of being screen-reader-only. */
+        .sr-only{
+            position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+            overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;
+        }
+        .bulk-bar{
+            display:flex;align-items:center;gap:.75rem;margin-top:1rem;
+            font-size:.8rem;color:var(--muted);
+        }
+        .bulk-bar button{
+            appearance:none;background:none;border:1px solid var(--line);border-radius:4px;
+            font:inherit;font-size:.75rem;padding:.35rem .7rem;cursor:pointer;color:var(--ink);
+        }
+        .bulk-bar button:hover{background:var(--ink);color:var(--paper)}
+        .pager{
+            display:flex;align-items:center;gap:1rem;margin-top:1.5rem;
+            font-size:.8rem;color:var(--muted);
+        }
+        .pager a{
+            border:1px solid var(--line);border-radius:4px;padding:.35rem .7rem;
+        }
+        .pager a:hover{background:var(--ink);color:var(--paper)}
+        .pager .disabled{
+            border:1px solid var(--line);border-radius:4px;padding:.35rem .7rem;
+            opacity:.4;
+        }
     </style>
 </head>
 <body>
 <div class="wrap">
     <a class="back" th:href="@{/}">&larr; Back to name generator</a>
     <h1>Pending submissions</h1>
-    <p class="reasons">User-proposed names awaiting review, oldest-first.</p>
+    <p class="reasons">User-proposed names awaiting review, oldest-first
+        (<span th:text="${submissionsPage.totalElements}">0</span> total).</p>
+
+    <!--
+        Bulk-select form (issue #86): a single <form> declared here, outside the table, that the
+        checkboxes and the two bulk buttons below reference by id via the HTML5 "form" attribute
+        rather than physically nesting inside it -- nested <form> elements are invalid HTML, and
+        each row already has its own single-action approve/reject <form> (kept as-is, still
+        useful for a one-off decision). The "form" attribute lets an element outside a <form>
+        still submit with it.
+    -->
+    <form id="bulk-form" th:action="@{/admin/submissions/bulk}" method="post"></form>
 
     <table>
         <thead>
         <tr>
+            <th><span class="sr-only">Select</span></th>
             <th>Name</th>
             <th>Race</th>
             <th>Gender</th>
@@ -49,8 +89,10 @@
         </tr>
         </thead>
         <tbody>
-        <!-- Actions column filled with approve/reject forms (PR 6) -->
-        <tr th:each="s : ${submissions}">
+        <tr th:each="s : ${submissionsPage.submissions}">
+            <td>
+                <input type="checkbox" name="ids" form="bulk-form" th:value="${s.submissionId}" />
+            </td>
             <td th:text="${s.displayName}"></td>
             <td th:text="${s.race}"></td>
             <td th:text="${s.gender}"></td>
@@ -65,11 +107,29 @@
                 </form>
             </td>
         </tr>
-        <tr th:if="${submissions.isEmpty()}">
-            <td class="empty" colspan="6">No pending submissions.</td>
+        <tr th:if="${submissionsPage.submissions.isEmpty()}">
+            <td class="empty" colspan="7">No pending submissions.</td>
         </tr>
         </tbody>
     </table>
+
+    <!-- Bulk action buttons -- form="bulk-form" submits the checked ids above plus which button
+         was clicked (name="action", value="approve"/"reject"), read by
+         AdminSubmissionController.bulkAction. -->
+    <div class="bulk-bar" th:if="${!submissionsPage.submissions.isEmpty()}">
+        <button type="submit" form="bulk-form" name="action" value="approve">Approve selected</button>
+        <button type="submit" form="bulk-form" name="action" value="reject">Reject selected</button>
+    </div>
+
+    <div class="pager" th:if="${submissionsPage.totalPages} > 1">
+        <a th:if="${submissionsPage.hasPrevious()}"
+           th:href="@{/admin/submissions(page=${submissionsPage.page - 1})}">&larr; Previous</a>
+        <span th:unless="${submissionsPage.hasPrevious()}" class="disabled">&larr; Previous</span>
+        <span th:text="'Page ' + (${submissionsPage.page} + 1) + ' of ' + ${submissionsPage.totalPages}"></span>
+        <a th:if="${submissionsPage.hasNext()}"
+           th:href="@{/admin/submissions(page=${submissionsPage.page + 1})}">Next &rarr;</a>
+        <span th:unless="${submissionsPage.hasNext()}" class="disabled">Next &rarr;</span>
+    </div>
 </div>
 </body>
 </html>

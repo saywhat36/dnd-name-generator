@@ -208,7 +208,14 @@ series of small PRs, each independently releasable.
 - [x] "My submissions" view ([#85](https://github.com/saywhat36/dnd-name-generator/issues/85)):
   `GET /submissions/mine`, owner-keyed, read-only, mirrors `GET /favorites`'s
   shape -- see `DECISIONS.md`
-- [ ] Admin bulk actions / pagination ([#86](https://github.com/saywhat36/dnd-name-generator/issues/86))
+- [x] Admin bulk actions / pagination ([#86](https://github.com/saywhat36/dnd-name-generator/issues/86)):
+  `GET /admin/submissions` is now paginated (`?page=`, 50 rows/page,
+  `Page<PendingSubmissionSummary>` with an explicit `countQuery`) instead
+  of hard-capped at 200 with no way to reach the tail. `POST
+  /admin/submissions/bulk` (`ids` + `action=approve|reject`) applies the
+  existing single-id `approve`/`reject` to a checked batch, best-effort
+  (an already-resolved id in the batch is skipped, not a whole-batch
+  failure) -- see `DECISIONS.md`
 - [ ] Wire the existing (unwired) `RateLimitFilter` scaffolding to
   `/submissions` ([#87](https://github.com/saywhat36/dnd-name-generator/issues/87))
 

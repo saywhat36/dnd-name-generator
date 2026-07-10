@@ -2,29 +2,31 @@ package com.dndnamegen.namegen.admin;
 
 import com.dndnamegen.namegen.submission.NameSubmission;
 import com.dndnamegen.namegen.submission.NameSubmissionRepository;
+import com.dndnamegen.namegen.submission.PendingSubmissionSummary;
 import com.dndnamegen.namegen.submission.SubmissionInsertDao;
 import com.dndnamegen.namegen.submission.SubmissionStatus;
 import java.time.Instant;
 import java.util.List;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Admin moderation for pending submissions (PR 4 read + PR 6 approve/reject). See PR 4 comment
- * for list-side rationale.
+ * Admin moderation for pending submissions (PR 4 read + PR 6 approve/reject + issue #86
+ * pagination/bulk actions). See PR 4 comment for list-side rationale.
  */
 @Service
 public class AdminSubmissionService {
 
     /**
-     * Cap on pending-submission rows, matching {@code AdminReportService.MAX_REPORTED_NAMES}'s
-     * reasoning: bounds this screen's query to a fixed cost no matter how large the queue grows.
-     * Oldest-first ordering (see {@code NameSubmissionRepository.findPendingSummaries}) means the
-     * truncated tail is the most-recently-submitted names -- acceptable for a low-traffic
-     * operator triage screen.
+     * Rows per page. Was a hard {@code MAX_PENDING} cap (200) before issue #86 -- a queue that
+     * outgrew it simply had its tail invisible, with no way to reach it. Now a per-page size:
+     * {@link #listPendingSubmissions(int)} paginates instead of truncating, so no submission is
+     * ever unreachable no matter how large the backlog grows. 50 keeps a page comfortably
+     * readable on the plain server-rendered table this screen already uses.
      */
-    private static final int MAX_PENDING = 200;
+    private static final int PAGE_SIZE = 50;
 
     private final NameSubmissionRepository nameSubmissionRepository;
     private final SubmissionInsertDao submissionInsertDao;
@@ -35,10 +37,22 @@ public class AdminSubmissionService {
         this.submissionInsertDao = submissionInsertDao;
     }
 
-    public List<PendingSubmissionView> listPendingSubmissions() {
-        return nameSubmissionRepository
-                .findPendingSummaries(SubmissionStatus.PENDING, PageRequest.of(0, MAX_PENDING))
-                .stream()
+    /**
+     * @param page 0-indexed. A too-high page is handled by Spring Data itself (returns an empty
+     *     content list, which the template already renders as "no pending submissions" without a
+     *     dedicated branch) -- but a negative page is not: {@code PageRequest.of} throws
+     *     {@code IllegalArgumentException} for one, and this app has no {@code @ControllerAdvice}
+     *     mapping it to a handled response, so {@code GET /admin/submissions?page=-1} would 500.
+     *     Caught in review of #90. Clamped to 0 here (not in the controller) so every caller of
+     *     this method gets the same guarantee, and so the returned {@code PendingSubmissionsPage}
+     *     reports the page that was actually queried, not the raw (possibly negative) input.
+     */
+    public PendingSubmissionsPage listPendingSubmissions(int page) {
+        int clampedPage = Math.max(0, page);
+        Page<PendingSubmissionSummary> result = nameSubmissionRepository.findPendingSummaries(
+                SubmissionStatus.PENDING, PageRequest.of(clampedPage, PAGE_SIZE));
+
+        List<PendingSubmissionView> views = result.getContent().stream()
                 .map(summary -> new PendingSubmissionView(
                         summary.getSubmissionId(),
                         summary.getDisplayName(),
@@ -47,6 +61,8 @@ public class AdminSubmissionService {
                         summary.getSubmitterUsername(),
                         summary.getCreatedAt()))
                 .toList();
+
+        return new PendingSubmissionsPage(views, clampedPage, result.getTotalPages(), result.getTotalElements());
     }
 
     /**
@@ -95,5 +111,24 @@ public class AdminSubmissionService {
                 submissionId, SubmissionStatus.REJECTED, reviewerOwnerId, Instant.now());
 
         return true;
+    }
+
+    /**
+     * Bulk approve (issue #86): applies {@link #approve(Long, Long)} to every id in the batch,
+     * inside one transaction. Best-effort, not all-or-nothing -- an id that's already resolved
+     * (a race with another admin, or a stale checked box from before a page reload) is silently
+     * skipped rather than failing the whole batch, matching the single-submission {@code
+     * approve}'s own "missing/not PENDING -> false, no exception" contract. A triage screen where
+     * one stale row aborts 49 valid approvals would be worse than the race it's guarding against.
+     */
+    @Transactional
+    public void bulkApprove(List<Long> submissionIds, Long reviewerOwnerId) {
+        submissionIds.forEach(id -> approve(id, reviewerOwnerId));
+    }
+
+    /** Bulk reject (issue #86): same best-effort contract as {@link #bulkApprove}. */
+    @Transactional
+    public void bulkReject(List<Long> submissionIds, Long reviewerOwnerId) {
+        submissionIds.forEach(id -> reject(id, reviewerOwnerId));
     }
 }
