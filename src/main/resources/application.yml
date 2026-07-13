@@ -86,12 +86,11 @@ app:
     # cost circuit breaker alongside the daily budget below.
     cap-per-combo: 20
     # How many names to request per replenishment cycle, capped further by
-    # however much headroom remains under cap-per-combo.
+    # however much headroom remains under cap-per-combo. A cycle only ever runs
+    # when a user on the AI source clicks "Generate five more" (issue #98): name
+    # serving no longer auto-triggers replenishment below any threshold, so there
+    # is no replenish-threshold here anymore.
     batch-size: 5
-    # NameService triggers replenish(race, gender) when a combo's ACTIVE/AI_GENERATED
-    # count drops below this -- checked only for requests whose source toggle includes
-    # AI_GENERATED (AI_GENERATED or ALL); CURATED-only requests never trigger it.
-    replenish-threshold: 5
     budget:
       # Global ceiling on real generation calls per day, across all combos --
       # a safety guardrail, not a cost optimization (see docs/DECISIONS.md,

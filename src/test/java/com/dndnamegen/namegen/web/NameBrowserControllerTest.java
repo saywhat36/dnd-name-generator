@@ -489,6 +489,58 @@ class NameBrowserControllerTest {
                 .andExpect(content().string(not(containsString("Generate"))));
     }
 
+    /**
+     * Issue #98 regression: a replenishment cycle in flight for a combo must NOT surface the
+     * "Conjuring five more" polling indicator on a non-AI source view of that same combo.
+     * isReplenishing is keyed by race+gender only, so before the source guard, viewing
+     * "User submitted" (or Handbook, or All) while the AI tab was mid-generation for the same
+     * combo lit up the indicator and started polling on a view that never grows the AI pool --
+     * the exact screenshot in the issue. Neither the indicator nor the generate button belongs
+     * anywhere but the AI source.
+     */
+    @Test
+    void browse_should_NotShowGeneratingIndicator_When_ReplenishingButSourceIsUserSubmitted() throws Exception {
+        Name userSubmittedName = mock(Name.class);
+        // Non-null id so the template's submitterUsernames.containsKey(n.id) byline lookup doesn't
+        // probe the (empty, immutable) map with a null key; submitterId left null, so the name has
+        // no resolvable byline -- irrelevant to what this test asserts.
+        when(userSubmittedName.getId()).thenReturn(10L);
+        when(userSubmittedName.getSource()).thenReturn(NameSource.USER_SUBMITTED);
+        when(userSubmittedName.getDisplayName()).thenReturn("Sarah");
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.USER_SUBMITTED))
+                .thenReturn(List.of(userSubmittedName));
+        when(poolReplenishmentService.isReplenishing(Race.ELF, Gender.FEMININE)).thenReturn(true);
+
+        mockMvc.perform(withOwner(get("/browse")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "USER_SUBMITTED")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Sarah")))
+                .andExpect(content().string(not(containsString("Conjuring"))))
+                .andExpect(content().string(not(containsString("Generate"))));
+    }
+
+    /**
+     * Issue #98: the ALL source includes AI names in what it serves but must not itself be able
+     * to spawn generation, so the "Generate five more" button is scoped to the AI source alone
+     * -- it does not render under ALL even with an AI pool below cap.
+     */
+    @Test
+    void browse_should_HideGenerateMoreButton_When_SourceIsAll() throws Exception {
+        Name aiName = mock(Name.class);
+        when(aiName.getSource()).thenReturn(NameSource.AI_GENERATED);
+        when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.ALL))
+                .thenReturn(List.of(aiName));
+
+        mockMvc.perform(withOwner(get("/browse")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "ALL")))
+                .andExpect(status().isOk())
+                .andExpect(content().string(not(containsString("Generate"))));
+    }
+
     @Test
     void generateMore_should_TriggerReplenishAndRenderBrowserFragment_When_Posted() throws Exception {
         when(nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED)).thenReturn(List.of());

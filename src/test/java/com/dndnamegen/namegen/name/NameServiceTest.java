@@ -2,26 +2,19 @@ package com.dndnamegen.namegen.name;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.dndnamegen.namegen.generation.PoolReplenishmentService;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
-import org.mockito.stubbing.Answer;
 
 class NameServiceTest {
 
     private final NameRepository nameRepository = mock(NameRepository.class);
-    private final PoolReplenishmentService poolReplenishmentService = mock(PoolReplenishmentService.class);
-    private final NameService nameService = new NameService(nameRepository, poolReplenishmentService, 5);
+    private final NameService nameService = new NameService(nameRepository);
 
     private static Name nameWithSource(NameSource source) {
         Name name = mock(Name.class);
@@ -43,7 +36,6 @@ class NameServiceTest {
         List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED);
 
         assertThat(result).containsExactly(curatedName);
-        verify(poolReplenishmentService, never()).replenish(any(), any());
     }
 
     @Test
@@ -56,8 +48,6 @@ class NameServiceTest {
         List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.USER_SUBMITTED);
 
         assertThat(result).containsExactly(userSubmittedName);
-        // No AI in this source, so no replenishment is ever triggered for the user-submitted view.
-        verify(poolReplenishmentService, never()).replenish(any(), any());
     }
 
     @Test
@@ -70,7 +60,6 @@ class NameServiceTest {
         List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED);
 
         assertThat(result).containsExactlyElementsOf(aiNames);
-        verify(poolReplenishmentService, never()).replenish(any(), any());
     }
 
     @Test
@@ -91,49 +80,25 @@ class NameServiceTest {
         List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.ALL);
 
         assertThat(result).containsExactlyElementsOf(allNames);
-        verify(poolReplenishmentService, never()).replenish(any(), any());
     }
 
+    /**
+     * Issue #98: name serving is a pure read on every source, even the AI source with a nearly
+     * empty pool. {@code getNames} no longer schedules generation of any kind -- growing the AI
+     * pool is exclusively the user-driven "Generate five more" action (see NameBrowserControllerTest).
+     * The strongest regression guard is that NameService no longer collaborates with
+     * PoolReplenishmentService at all (it isn't even a constructor dependency); this test pins that
+     * browsing a sub-(former-)threshold AI pool returns exactly the served rows.
+     */
     @Test
-    void getNames_should_NotTriggerReplenish_When_SourceIsCuratedOnly() {
+    void getNames_should_ServeWithoutTriggeringGeneration_When_AiPoolIsBelowFormerThreshold() {
+        List<Name> belowFormerThresholdPool = aiGeneratedNames(4);
         when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(any(), any(), any(), any()))
-                .thenReturn(List.of());
+                .thenReturn(belowFormerThresholdPool);
 
-        nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.CURATED);
+        List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED);
 
-        verify(poolReplenishmentService, never()).replenish(any(), any());
-    }
-
-    @Test
-    void getNames_should_TriggerReplenish_When_SourceIsAiGeneratedAndPoolBelowThreshold() {
-        List<Name> belowThresholdPool = aiGeneratedNames(4);
-        when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(any(), any(), any(), any()))
-                .thenReturn(belowThresholdPool);
-
-        nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED);
-
-        verify(poolReplenishmentService).replenish(Race.ELF, Gender.FEMININE);
-    }
-
-    @Test
-    void getNames_should_TriggerReplenish_When_SourceIsAllAndPoolBelowThreshold() {
-        when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(any(), any(), any(), any()))
-                .thenReturn(List.of());
-
-        nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.ALL);
-
-        verify(poolReplenishmentService).replenish(Race.ELF, Gender.FEMININE);
-    }
-
-    @Test
-    void getNames_should_NotTriggerReplenish_When_AiGeneratedPoolAtOrAboveThreshold() {
-        List<Name> atThresholdPool = aiGeneratedNames(5);
-        when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(any(), any(), any(), any()))
-                .thenReturn(atThresholdPool);
-
-        nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED);
-
-        verify(poolReplenishmentService, never()).replenish(any(), any());
+        assertThat(result).containsExactlyElementsOf(belowFormerThresholdPool);
     }
 
     @Test
@@ -151,7 +116,6 @@ class NameServiceTest {
         verify(nameRepository)
                 .findByRaceAndGenderAndStatusAndSourceIn(
                         Race.ELF, Gender.FEMININE, NameStatus.ACTIVE, List.of(NameSource.CURATED));
-        verify(poolReplenishmentService, never()).replenish(any(), any());
     }
 
     @Test
@@ -164,42 +128,6 @@ class NameServiceTest {
         List<Name> result = nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED);
 
         assertThat(result).containsExactlyElementsOf(aiNames);
-        verify(poolReplenishmentService, never()).replenish(any(), any());
-    }
-
-    /**
-     * PoolReplenishmentService.replenish is @Async in production, so the Spring proxy
-     * dispatches the real generation work to another thread and returns immediately --
-     * NameService must never itself wait on that work. This test stubs replenish with an
-     * Answer that mimics exactly that proxy behavior (hand off to a background thread,
-     * return immediately) with a deliberately slow "LLM call" on that background thread,
-     * then asserts getNames returns long before the slow work finishes.
-     */
-    @Test
-    void getNames_should_ReturnWithoutBlocking_When_ReplenishSimulatesASlowProvider() throws InterruptedException {
-        when(nameRepository.findByRaceAndGenderAndStatusAndSourceIn(any(), any(), any(), any()))
-                .thenReturn(List.of());
-        CountDownLatch slowProviderCallFinished = new CountDownLatch(1);
-        Answer<Void> mimicsAsyncProxyDispatch = invocation -> {
-            Thread backgroundReplenishment = new Thread(() -> {
-                try {
-                    Thread.sleep(300);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-                slowProviderCallFinished.countDown();
-            });
-            backgroundReplenishment.start();
-            return null;
-        };
-        doAnswer(mimicsAsyncProxyDispatch).when(poolReplenishmentService).replenish(any(), any());
-
-        long start = System.nanoTime();
-        nameService.getNames(Race.ELF, Gender.FEMININE, NameSourceFilter.AI_GENERATED);
-        long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
-
-        assertThat(elapsedMillis).isLessThan(100);
-        assertThat(slowProviderCallFinished.await(5, TimeUnit.SECONDS)).isTrue();
     }
 
     @Test
