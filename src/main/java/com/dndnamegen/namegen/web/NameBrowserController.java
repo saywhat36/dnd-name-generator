@@ -19,12 +19,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * htmx + Thymeleaf frontend: race/gender/source picker plus favorite/report action
@@ -96,7 +98,11 @@ public class NameBrowserController {
      * Fire-and-forget, per the "never block a request on a live LLM call" rule --
      * the re-rendered fragment's "generating" flag drives the client-side polling
      * that reveals the result once the async cycle finishes (see index.html). The button
-     * that posts here only renders on the AI source, so source is AI_GENERATED in practice.
+     * that posts here only renders on the AI source, but the invariant "generation triggers
+     * only from the AI source" (issue #98) is enforced server-side, not left to the UI: a
+     * non-AI {@code source} (e.g. a crafted POST with source=CURATED/ALL) is rejected with 400
+     * before replenish(...) runs, so a request cannot fire an LLM call -- or paint the
+     * "Conjuring" indicator -- from a view that must never trigger generation.
      *
      * <p>The "generatingMore" model attribute is forced to true here rather than
      * read from PoolReplenishmentService.isReplenishing(...) via populateBrowser --
@@ -119,6 +125,14 @@ public class NameBrowserController {
             @RequestParam(defaultValue = "DEFAULT") SortOrder sort,
             Model model,
             Identity identity) {
+        if (source != NameSourceFilter.AI_GENERATED) {
+            // Generation is an AI-source-only action (issue #98). The button only ever posts
+            // AI_GENERATED; reject any other source here so a crafted request can't fire replenish
+            // or force the "Conjuring" indicator on a non-AI view, keeping this endpoint consistent
+            // with the source guard in populateBrowser.
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "generate-more is only valid for the AI_GENERATED source");
+        }
         poolReplenishmentService.replenish(race, gender);
         populateBrowser(model, race, gender, source, sort, identity);
         model.addAttribute("generatingMore", true);

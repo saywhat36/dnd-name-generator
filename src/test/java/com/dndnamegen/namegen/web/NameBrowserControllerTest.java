@@ -555,6 +555,23 @@ class NameBrowserControllerTest {
     }
 
     /**
+     * Issue #98 (review of PR #99): generation is an AI-source-only action, enforced server-side
+     * rather than left to the UI. A crafted authenticated POST with a non-AI source (here ALL, but
+     * the same holds for CURATED/USER_SUBMITTED) is rejected with 400 and never reaches
+     * replenish(...), so it cannot fire an LLM call from a view that must not trigger generation.
+     */
+    @Test
+    void generateMore_should_ReturnBadRequestAndNotReplenish_When_SourceIsNotAiGenerated() throws Exception {
+        mockMvc.perform(withOwner(post("/browse/generate-more")
+                        .param("race", "ELF")
+                        .param("gender", "FEMININE")
+                        .param("source", "ALL")))
+                .andExpect(status().isBadRequest());
+
+        verify(poolReplenishmentService, never()).replenish(any(), any());
+    }
+
+    /**
      * replenish(...) is @Async, so isReplenishing(...) reading the in-flight map
      * immediately afterward in the same request thread would race the executor
      * thread's own update to that map -- stubbing it false here (as it genuinely

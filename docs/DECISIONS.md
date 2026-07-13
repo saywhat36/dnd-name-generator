@@ -2885,10 +2885,13 @@ New rule: **name serving never triggers generation on any source.** `NameService
 on `PoolReplenishmentService` at all (it's a pure `NameRepository` read now), so the REST `GET
 /names` path stops auto-generating as well. The *only* trigger is the user clicking "Generate five
 more", which posts to `POST /browse/generate-more`; that button, and the `generatingMore` polling
-indicator, now render **only** on the `AI_GENERATED` source -- not `ALL`. The manual endpoint still
-calls the same guarded `replenish(...)` (stampede guard, per-combo cap, global daily budget), so no
-cost protection is bypassed. `app.pool-replenishment.replenish-threshold` had no remaining reader
-and was deleted from `application.yml`.
+indicator, now render **only** on the `AI_GENERATED` source -- not `ALL`. The endpoint enforces that
+invariant server-side rather than trusting the UI: a non-AI `source` (a crafted POST with
+source=CURATED/ALL) is rejected with `400` before `replenish(...)` runs, so no request can fire an
+LLM call -- or paint the "Conjuring" indicator -- from a non-AI view (review of PR #99). The manual
+path still calls the same guarded `replenish(...)` (stampede guard, per-combo cap, global daily
+budget), so no cost protection is bypassed. `app.pool-replenishment.replenish-threshold` had no
+remaining reader and was deleted from `application.yml`.
 
 **Why not keep auto-replenishment but scope it to the pure AI filter?** The issue explicitly asked
 for both: no source other than the AI source may trigger the call, *and* even the AI tab with fewer
