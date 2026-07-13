@@ -2865,3 +2865,41 @@ controller at all. A follow-up `GET /submissions/mine` on the same exhausted buc
 at the time), not `429` -- proof either way that the `FilterRegistrationBean`'s exact-path scoping
 to `/submissions` doesn't leak onto a different URL, since a leaked rate limit would have produced
 `429` regardless of whether a handler exists for the path.
+
+## 2026-07-13: AI generation is user-triggered only, on the AI source alone (issue #98)
+
+Removed the threshold-triggered half of pool replenishment. `NameService.getNames` used to
+schedule `PoolReplenishmentService.replenish(...)` as a side effect of a plain read whenever the
+served source *included* `AI_GENERATED` (so `AI_GENERATED` **or** `ALL`) and the combo's AI pool sat
+below `app.pool-replenishment.replenish-threshold`. Two consequences were reported as bugs:
+
+1. **A non-AI-source view could show generation happening.** `isReplenishing(...)` is keyed by
+   race+gender only, so a cycle kicked off from the AI tab lit up the "Conjuring five more..."
+   polling indicator on the *User submitted* (and Handbook/All) view of the same combo -- the
+   screenshot in the issue. Those views never grow the AI pool, so the indicator was both wrong and
+   started a pointless 2s poll.
+2. **Generation fired with no user action.** Merely opening a combo whose AI pool had fewer than
+   five names spent an LLM call, and `ALL` -- which is not "the AI source" -- could trigger it too.
+
+New rule: **name serving never triggers generation on any source.** `NameService` no longer depends
+on `PoolReplenishmentService` at all (it's a pure `NameRepository` read now), so the REST `GET
+/names` path stops auto-generating as well. The *only* trigger is the user clicking "Generate five
+more", which posts to `POST /browse/generate-more`; that button, and the `generatingMore` polling
+indicator, now render **only** on the `AI_GENERATED` source -- not `ALL`. The endpoint enforces that
+invariant server-side rather than trusting the UI: a non-AI `source` (a crafted POST with
+source=CURATED/ALL) is rejected with `400` before `replenish(...)` runs, so no request can fire an
+LLM call -- or paint the "Conjuring" indicator -- from a non-AI view (review of PR #99). The manual
+path still calls the same guarded `replenish(...)` (stampede guard, per-combo cap, global daily
+budget), so no cost protection is bypassed. `app.pool-replenishment.replenish-threshold` had no
+remaining reader and was deleted from `application.yml`.
+
+**Why not keep auto-replenishment but scope it to the pure AI filter?** The issue explicitly asked
+for both: no source other than the AI source may trigger the call, *and* even the AI tab with fewer
+than five names must wait for a click rather than generating immediately. A threshold trigger, even
+AI-only, violates the second requirement, so it's gone entirely rather than narrowed.
+
+**Test changes.** Dropped the now-impossible `NameServiceTest` cases that asserted `replenish(...)`
+was triggered/not-triggered by `getNames` (the collaborator is gone); kept the source-routing and
+"serve a sub-threshold AI pool without generating" cases. Added `NameBrowserControllerTest`
+regressions: `browse_should_NotShowGeneratingIndicator_When_ReplenishingButSourceIsUserSubmitted`
+(the issue's exact scenario) and `browse_should_HideGenerateMoreButton_When_SourceIsAll`.

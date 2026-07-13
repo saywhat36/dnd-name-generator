@@ -19,12 +19,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * htmx + Thymeleaf frontend: race/gender/source picker plus favorite/report action
@@ -87,18 +89,20 @@ public class NameBrowserController {
     }
 
     /**
-     * Manual "generate more AI names" trigger -- the automatic threshold-triggered
-     * replenishment in NameService.getNames only fires while a combo's AI pool is
-     * below app.pool-replenishment.replenish-threshold, so once a pool reaches that
-     * threshold (its usual resting point after one batch) nothing ever asks for more,
-     * even though app.pool-replenishment.cap-per-combo allows further growth. This
-     * calls the exact same guarded PoolReplenishmentService.replenish(...) the
-     * automatic path uses -- same stampede guard, per-combo cap check, and global
-     * daily budget check, so this manual trigger cannot bypass or duplicate any of
-     * those cost protections regardless of which provider/model is configured.
+     * The only way to grow a combo's AI pool (issue #98): name serving never triggers
+     * generation on its own, so a user on the AI source clicks "Generate five more" to
+     * request the next batch, up to app.pool-replenishment.cap-per-combo. This calls the
+     * guarded PoolReplenishmentService.replenish(...) -- with its stampede guard, per-combo
+     * cap check, and global daily budget check -- so the trigger cannot bypass or duplicate
+     * any of those cost protections regardless of which provider/model is configured.
      * Fire-and-forget, per the "never block a request on a live LLM call" rule --
      * the re-rendered fragment's "generating" flag drives the client-side polling
-     * that reveals the result once the async cycle finishes (see index.html).
+     * that reveals the result once the async cycle finishes (see index.html). The button
+     * that posts here only renders on the AI source, but the invariant "generation triggers
+     * only from the AI source" (issue #98) is enforced server-side, not left to the UI: a
+     * non-AI {@code source} (e.g. a crafted POST with source=CURATED/ALL) is rejected with 400
+     * before replenish(...) runs, so a request cannot fire an LLM call -- or paint the
+     * "Conjuring" indicator -- from a view that must never trigger generation.
      *
      * <p>The "generatingMore" model attribute is forced to true here rather than
      * read from PoolReplenishmentService.isReplenishing(...) via populateBrowser --
@@ -121,6 +125,14 @@ public class NameBrowserController {
             @RequestParam(defaultValue = "DEFAULT") SortOrder sort,
             Model model,
             Identity identity) {
+        if (source != NameSourceFilter.AI_GENERATED) {
+            // Generation is an AI-source-only action (issue #98). The button only ever posts
+            // AI_GENERATED; reject any other source here so a crafted request can't fire replenish
+            // or force the "Conjuring" indicator on a non-AI view, keeping this endpoint consistent
+            // with the source guard in populateBrowser.
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "generate-more is only valid for the AI_GENERATED source");
+        }
         poolReplenishmentService.replenish(race, gender);
         populateBrowser(model, race, gender, source, sort, identity);
         model.addAttribute("generatingMore", true);
@@ -160,7 +172,15 @@ public class NameBrowserController {
         model.addAttribute("reportedNameIds", nameReportService.getReportedNameIds(identity));
         model.addAttribute("aiPoolSize", aiPoolSize);
         model.addAttribute("aiPoolCap", poolReplenishmentService.getPoolCapPerCombo());
-        model.addAttribute("generatingMore", poolReplenishmentService.isReplenishing(race, gender));
+        // Issue #98: the "Conjuring five more" polling indicator belongs only to the AI source,
+        // which is the sole place AI generation can be triggered. isReplenishing is keyed by
+        // race+gender alone, so without this source guard an in-flight cycle started from the AI
+        // tab would also light up the indicator on the CURATED/USER_SUBMITTED/ALL views for the
+        // same combo -- views that never grow the AI pool -- which is exactly the mis-trigger the
+        // issue reported (screenshot: "User Submitted" showing "Conjuring five more...").
+        boolean aiSourceSelected = source == NameSourceFilter.AI_GENERATED;
+        model.addAttribute(
+                "generatingMore", aiSourceSelected && poolReplenishmentService.isReplenishing(race, gender));
         // Backs the submit-a-name form's client-side maxlength -- see QualityGateService's
         // getMaxLength() Javadoc for why this reads live config rather than a hardcoded value.
         model.addAttribute("submissionMaxLength", qualityGateService.getMaxLength());

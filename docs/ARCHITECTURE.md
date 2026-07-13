@@ -43,9 +43,9 @@ com.dndnamegen.namegen
 │   ├── NameGenerationService.java  # ChatClient calls, few-shot prompt build
 │   ├── DeduplicationService.java   # pre-filter; DB constraint is backstop
 │   ├── QualityGateService.java     # length/charset/blocklist checks
-│   ├── PoolReplenishmentService.java  # @Async, threshold-triggered,
-│   │                                  # owns the stampede guard and the
-│   │                                  # global LLM budget check
+│   ├── PoolReplenishmentService.java  # @Async, user-triggered (generate-more
+│   │                                  # button, AI source only); owns the
+│   │                                  # stampede guard and global LLM budget check
 │   ├── GenerationLog.java, GenerationLogRepository.java
 ├── favorite/
 │   ├── Favorite.java, FavoriteRepository.java
@@ -208,10 +208,13 @@ and only names a human actually endorsed get persisted from refinement.
 5. **The request always serves from what's already in the database.**
    It never blocks on an LLM call, and never talks to a provider
    directly -- there is no per-request provider error to handle here.
-6. If the pool for that race+gender combo is below a configured
-   threshold, `PoolReplenishmentService.replenish(...)` is triggered
-   asynchronously (`@Async`) -- this request does not wait on it, and
-   does not need to know whether it succeeds.
+6. **Name serving never triggers generation** (issue #98). Growing a
+   combo's AI pool is a separate, user-initiated action available only
+   on the AI source: the "Generate five more" button posts to
+   `POST /browse/generate-more`, which is the sole caller of
+   `PoolReplenishmentService.replenish(...)`. A read request -- on any
+   source, including an AI pool with fewer than five names -- never
+   schedules a replenishment cycle on its own.
 7. A random subset (config-driven batch size) of available names is
    returned as an htmx fragment. If the AI portion of the pool is
    currently empty for this combo, the response can include a small

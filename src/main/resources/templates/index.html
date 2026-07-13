@@ -449,18 +449,17 @@
             </li>
         </ul>
 
-        <!-- Manual AI pool growth: the automatic below-threshold replenishment in
-             NameService.getNames only bootstraps a combo's AI pool up to
-             app.pool-replenishment.replenish-threshold, so once it reaches that resting
-             point nothing ever asks for more on its own. This button lets the user ask
-             for another batch, up to app.pool-replenishment.cap-per-combo, subject to the
-             same stampede guard/pool-cap/daily-budget protections PoolReplenishmentService
-             already enforces regardless of provider. Hidden once at cap or already
+        <!-- AI pool growth is entirely user-driven and lives only on the AI source (issue #98):
+             name serving never triggers generation, so this button is the sole way to ask for
+             another batch, up to app.pool-replenishment.cap-per-combo, subject to the same
+             stampede guard/pool-cap/daily-budget protections PoolReplenishmentService enforces
+             regardless of provider. Scoped to the AI_GENERATED source (not ALL, which merely
+             includes AI names but must not spawn generation), and hidden once at cap or already
              generating, so it never renders as a button that would visibly do nothing. -->
         <div
             class="more"
             sec:authorize="isAuthenticated()"
-            th:if="${(selectedSource == T(com.dndnamegen.namegen.name.NameSourceFilter).AI_GENERATED or selectedSource == T(com.dndnamegen.namegen.name.NameSourceFilter).ALL) and !generatingMore and aiPoolSize < aiPoolCap}">
+            th:if="${selectedSource == T(com.dndnamegen.namegen.name.NameSourceFilter).AI_GENERATED and !generatingMore and aiPoolSize < aiPoolCap}">
             <button
                 type="button"
                 class="cta"
